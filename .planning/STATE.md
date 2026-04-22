@@ -5,21 +5,21 @@
 See: `.planning/PROJECT.md` (updated 2026-04-22)
 
 **Core value:** Hosts can keep their always-on MCP surface tiny while still invoking the right toolsets on demand in the same thread.
-**Current focus:** Roadmap complete - next work should be planned as a new milestone
+**Current focus:** Post-v1 release polish completed - repo is ready for real host exercise or a new milestone
 
 ## Current Position
 
-Phase: 5 of 5 (Composition UX and Runtime Tuning)
-Plan: 2 of 2 in current phase
+Phase: 6 of 6 (Release and Operability Polish)
+Plan: 1 of 1 in current phase
 Status: Completed
-Last activity: 2026-04-22 - Completed 05-02 host-facing composition docs, examples, and helper affordances
+Last activity: 2026-04-22 - Completed 06-01 release, CI, and documentation polish
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
+- Total plans completed: 11
 - Average duration: -
 - Total execution time: 0.0 hours
 
@@ -32,9 +32,10 @@ Progress: [██████████] 100%
 | 3. Scope Semantics and Restore Policy | 2 | - | - |
 | 4. Health Monitoring and Recovery | 2 | - | - |
 | 5. Composition UX and Runtime Tuning | 2 | - | - |
+| 6. Release and Operability Polish | 1 | - | - |
 
 **Recent Trend:**
-- Last 5 plans: 03-02, 04-01, 04-02, 05-01, 05-02
+- Last 5 plans: 04-01, 04-02, 05-01, 05-02, 06-01
 - Trend: Stable
 
 ## Accumulated Context
@@ -55,6 +56,7 @@ Recent decisions affecting current work:
 - Recovery now preserves `recoverable_scopes` across startup, restores only policy-eligible scopes, and exposes stale reconciliation as an explicit control-plane action.
 - Composition prep now has a cheap live tool-description surface and an explicit runtime-budget inspection surface, separate from heavier toolset-level contract inspection.
 - Program results can now return only explicitly requested variables and mounted-tool summaries, and the repo includes a concrete host-facing composition workflow guide.
+- Post-v1 polish now adds CI, first-run docs, state-compatibility notes, and a current operational handoff instead of widening the product surface further.
 
 ### Pending Todos
 
@@ -62,7 +64,7 @@ None currently. Future work should start from a new planned milestone or a defer
 
 ### Blockers/Concerns
 
-- The v1 roadmap is complete; future work should preserve the same planning discipline instead of reopening ad hoc iteration.
+- The main roadmap and post-v1 polish phase are complete; future work should start from a new milestone instead of reopening ad hoc iteration.
 
 ## Deferred Items
 
@@ -74,5 +76,5 @@ None currently. Future work should start from a new planned milestone or a defer
 ## Session Continuity
 
 Last session: 2026-04-22 00:00
-Stopped at: Completed Phase 5 and the full v1 roadmap
+Stopped at: Completed Phase 6 release/operability polish after the full v1 roadmap
 Resume file: None

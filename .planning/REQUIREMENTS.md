@@ -53,6 +53,16 @@ Current phase note:
 - `05-01` delivered `describe_mounted_tools` for cheap live per-tool summaries and `inspect_runtime_budgets` for explicit program/transport limit inspection
 - `05-02` delivered `return_contract_summaries` in `run_tool_program` plus a host-facing composition workflow guide and examples
 
+### Release and Operability
+
+- [x] **OPS-01**: The repo has automated verification on Windows and Linux for the main test lane
+- [x] **OPS-02**: The repo preserves the strict Windows unraisable-warning verification lane in automation
+- [x] **OPS-03**: Top-level docs include a practical quickstart and explicit notes about protected transport persistence and state migration
+- [x] **OPS-04**: The handoff doc reflects the current implemented system and operating model
+
+Current phase note:
+- `06-01` delivered a GitHub Actions matrix, preserved the strict Windows warning lane, added a first-run quickstart, documented state compatibility and transport-secret persistence, and replaced the stale bootstrap handoff
+
 ## v2 Requirements
 
 ### Transports
@@ -98,12 +108,16 @@ Current phase note:
 | COMP-02 | Phase 5 | Completed |
 | COMP-03 | Phase 5 | Completed |
 | COMP-04 | Phase 5 | Completed |
+| OPS-01 | Phase 6 | Completed |
+| OPS-02 | Phase 6 | Completed |
+| OPS-03 | Phase 6 | Completed |
+| OPS-04 | Phase 6 | Completed |
 
 **Coverage:**
-- v1 requirements: 21 total
-- Mapped to phases: 21
+- v1 requirements: 25 total
+- Mapped to phases: 25
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-21*
-*Last updated: 2026-04-22 after completing 05-02 host-facing composition docs, examples, and helper affordances*
+*Last updated: 2026-04-22 after completing 06-01 release, CI, and documentation polish*

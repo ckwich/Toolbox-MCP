@@ -1,68 +1,74 @@
 # Toolbox Handoff
 
-## What Was Written
+## Current Status
 
-- Main specification: [spec.med](C:/Dev/Toolbox/spec.med)
-- Host composition guide: [docs/composition-workflows.md](C:/Dev/Toolbox/docs/composition-workflows.md)
+Toolbox is a working control-plane MCP for progressive discovery and on-demand toolset
+activation. The core v1 roadmap and a post-v1 polish pass are complete.
 
-## Project Intent
+Today the repo includes:
 
-Build a small control-plane MCP server that manages the lifecycle of other MCP toolsets.
-The point is to support lazy loading, reduce unnecessary tool exposure, and refresh stale
-toolsets in-place without forcing a new conversation.
+- registration, activation, refresh, deactivation, and unregistration of managed stdio toolsets
+- mounted downstream tools under `namespace.tool`
+- cached and mounted contract inspection plus diffing
+- scoped activation semantics across `thread`, `session`, and `global`
+- bounded health checks, recovery flows, and stale-state reconciliation
+- batch and constrained scripted composition
+- recent audit history and recent-failure summaries
+- protected transport-secret persistence and plaintext-state migration
+- cross-platform CI for the main verification lanes
 
-## Locked Decisions
+## First Run
 
-- This is a separate MCP, not part of any domain server.
-- The always-loaded surface should stay very small.
-- The primary workflow is metadata-first, then activation on demand.
-- Refresh must be atomic and preserve the last-known-good contract on failure.
-- Scope matters and should support at least `thread`, `session`, and `global`.
+1. Install dependencies:
+   `python -m pip install -e ".[dev]"`
+2. Verify the repo locally:
+   `python -m pytest -q`
+3. On Windows, also run the strict warning lane:
+   `python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning`
+4. Start Toolbox:
+   `python -m toolbox.server`
+5. Follow [docs/quickstart.md](docs/quickstart.md) to exercise the seeded `fake_stdio` toolset.
 
-## Recommended First Build Order
+## Key Docs
 
-1. Scaffold the repo and FastMCP server.
-2. Implement the registry model and JSON persistence.
-3. Implement `search_toolsets`, `list_toolsets`, and `get_toolset_status`.
-4. Add activation for one managed stdio MCP server.
-5. Add schema hashing and cache persistence.
-6. Add refresh with schema diff reporting.
-7. Add safe deactivation with in-flight call protection.
+- Product/spec source: [spec.med](spec.med)
+- Main repo overview: [README.md](README.md)
+- Fast local trial: [docs/quickstart.md](docs/quickstart.md)
+- Host composition patterns: [docs/composition-workflows.md](docs/composition-workflows.md)
+- Planning spine: [.planning/PROJECT.md](.planning/PROJECT.md)
 
-## Suggested First Milestone
+## Verification Standard
 
-Aim for a narrow vertical slice:
+The current local verification bar is:
 
-- one registered fake MCP server
-- one activation path
-- one refresh path
-- one deactivation path
-- one thread-scoped state model
+- `python -m pytest -q`
+- `python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning`
+- `python -m compileall toolbox tests`
 
-That will prove the architecture before expanding to multiple transports or richer host integration.
+The same expectations now live in `.github/workflows/ci.yml` for Linux and Windows.
 
-## Key Risks
+## State and Secrets
 
-- Letting activation or refresh partially succeed and exposing a broken contract
-- Mixing host scope state and Toolbox scope state without a clear source of truth
-- Making the control-plane tool surface too large and defeating the token-saving goal
-- Over-designing registration or auth before the activation/refresh core is proven
+Toolbox persists local state in `.toolbox/state.json`.
 
-## Recommended Technical Shortcuts
+- Public control-plane responses do not return raw `transport.args` or `transport.env`.
+- Transport `args` and `env` are protected at rest before they land in `state.json`.
+- On Windows, protection uses DPAPI under the current user.
+- On non-Windows platforms, Toolbox stores encrypted bundles in `state.json` and the
+  local AES-GCM key in `.toolbox/state.key`.
+- Older plaintext transport bundles are migrated on load.
 
-- Use JSON storage first unless concurrent writers become an immediate requirement.
-- Start with stdio transport only.
-- Diff schemas by normalized hash, not by raw text.
-- Keep stale detection passive in v1, then add optional heartbeat checks later.
+If future work changes the state document again, treat it like a compatibility surface:
+add migration logic, test it, and document the new version clearly.
 
-## Good v1 Done State
+## Deferred Next Work
 
-The first version is good if:
+The finished milestone intentionally stopped short of:
 
-- it can describe known toolsets cheaply
-- activate a toolset on demand
-- detect and refresh a stale toolset
-- report schema changes clearly
-- deactivate safely
+- remote transports beyond stdio
+- connector-backed registrations
+- unrestricted execution/runtime sandboxes
+- broader host-specific integrations
 
-Everything else can wait until after that loop is working end to end.
+If the next milestone starts, the right posture is to plan it as a new deliberate phase,
+not to reopen the completed roadmap ad hoc.

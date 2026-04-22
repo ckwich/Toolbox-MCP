@@ -2,7 +2,9 @@
 
 ## Overview
 
-The current repo already proves the core lazy-loading and composition loop, so the next roadmap is about turning that slice into a host-ready control plane. The near-term journey is: make lifecycle activity observable, make cached and mounted contracts inspectable, lock explicit scope semantics before recovery automation, add stronger health and restore behavior on top of those scope rules, and then improve composition ergonomics on the safer substrate.
+The main v1 roadmap is complete. This follow-on phase captures the minimum polish needed
+before broader real-world use: durable CI, a clear first-run path, explicit
+state-compatibility notes, and a current operational handoff.
 
 ## Phases
 
@@ -15,6 +17,7 @@ The current repo already proves the core lazy-loading and composition loop, so t
 - [x] **Phase 3: Scope Semantics and Restore Policy** - Formalize and enforce `thread`/`session`/`global` behavior before recovery automation
 - [x] **Phase 4: Health Monitoring and Recovery** - Add optional health checks, restore flows, and stale-state reconciliation
 - [x] **Phase 5: Composition UX and Runtime Tuning** - Improve discovery and programmatic composition ergonomics on top of the hardened harness
+- [x] **Phase 6: Release and Operability Polish** - Add CI, first-run guidance, compatibility notes, and a current operational handoff
 
 ## Phase Details
 
@@ -90,6 +93,20 @@ Plans:
 - [x] 05-01: Add mounted-tool description and runtime-budget inspection surfaces
 - [x] 05-02: Add host-facing composition docs, examples, and helper affordances
 
+### Phase 6: Release and Operability Polish
+**Goal**: Make the completed v1 control plane easier to verify, try, and hand off safely.
+**Depends on**: Phase 5
+**Requirements**: OPS-01, OPS-02, OPS-03, OPS-04
+**Success Criteria** (what must be TRUE):
+1. The repo has automated verification on Windows and Linux, including the strict Windows warning lane.
+2. A new developer or operator can follow a short quickstart to exercise the seeded fake toolset flow.
+3. State-version and transport-secret persistence behavior are documented clearly enough for safe local use and migration.
+4. `HANDOFF.md` describes the current repo and operating model, not the original bootstrap plan.
+**Plans**: 1 plan
+
+Plans:
+- [x] 06-01: Add CI, first-run guidance, compatibility notes, and an operational handoff
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -99,3 +116,4 @@ Plans:
 | 3. Scope Semantics and Restore Policy | 2/2 | Completed | 03-01, 03-02 |
 | 4. Health Monitoring and Recovery | 2/2 | Completed | 04-01, 04-02 |
 | 5. Composition UX and Runtime Tuning | 2/2 | Completed | 05-01, 05-02 |
+| 6. Release and Operability Polish | 1/1 | Completed | 06-01 |

@@ -87,7 +87,7 @@ reasons for inactive or unknown filters. `inspect_runtime_budgets` exposes the c
 program limits and transport timeout settings so hosts can shape batches and scripted
 programs intentionally before they submit them.
 
-For complete host-facing examples, see [docs/composition-workflows.md](/C:/Dev/Toolbox/docs/composition-workflows.md).
+For complete host-facing examples, see [docs/composition-workflows.md](docs/composition-workflows.md).
 
 ## Scope
 
@@ -164,15 +164,24 @@ currently eligible for the namespace.
 
 ```text
 toolbox/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── docs/
+│   ├── composition-workflows.md
+│   └── quickstart.md
 ├── toolbox/
 │   ├── config.py
 │   ├── fake_managed_server.py
 │   ├── models.py
+│   ├── program_runtime.py
 │   ├── registry.py
 │   ├── scope_manager.py
 │   ├── server.py
 │   ├── service.py
+│   ├── stdio_transport.py
 │   ├── transport_manager.py
+│   ├── transport_secrets.py
 │   └── validation.py
 ├── tests/
 ├── HANDOFF.md
@@ -190,10 +199,30 @@ python -m toolbox.server
 Toolbox stores its local state in `.toolbox/state.json` by default and seeds a fake managed
 toolset manifest in `.toolbox/fake_toolset_manifest.json`.
 
+## Quickstart
+
+The shortest local proof-of-life path is:
+
+1. Install the package and dev dependencies with `python -m pip install -e ".[dev]"`.
+2. Run `python -m pytest -q` once.
+3. Start Toolbox with `python -m toolbox.server`.
+4. In your MCP host, call `search_toolsets`, then `activate_toolsets` for `fake_stdio`.
+5. Call `describe_mounted_tools`, then `run_tool_program` or `run_tool_batch`.
+6. Call `deactivate_toolsets` when you are done.
+
+For a concrete end-to-end example payload sequence, see [docs/quickstart.md](docs/quickstart.md).
+
 ## Development
 
 ```powershell
 python -m pytest
+```
+
+On Windows, the stricter subprocess-finalization lane is also part of the expected
+verification bar:
+
+```powershell
+python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning
 ```
 
 ## Observability
@@ -210,6 +239,20 @@ the raw `transport.args` or `transport.env` secrets.
 Transport `args` and `env` are also protected at rest. Toolbox stores encrypted
 transport bundles in `.toolbox/state.json` instead of persisting raw argument and
 environment values directly, and older plaintext state files are migrated on load.
+
+## State Compatibility
+
+Toolbox now treats local state as an operational compatibility surface:
+
+- the current persisted state document version is `2`
+- older plaintext transport bundles are migrated automatically on load
+- on Windows, protected transport bundles use DPAPI via the current user context
+- on non-Windows platforms, Toolbox stores the encrypted bundle in `state.json` and the
+  local AES-GCM key in `.toolbox/state.key`
+
+If you change state structure again in a future milestone, keep a migration path and
+document the new version explicitly instead of silently rewriting or dropping older
+registrations.
 
 Recorded events include successful and failed registration, activation, refresh,
 deactivation, unregistration, and mounted-tool runtime failures such as call timeouts
@@ -237,3 +280,9 @@ limits (`max_program_length_chars`, `max_ast_nodes`, `max_loop_iterations`,
 `run_tool_program` complements that by letting callers request only the specific local
 variables and mounted-tool contract summaries they want back from a run, instead of
 echoing the full initial context or reloading the full mounted inventory.
+
+## Docs Map
+
+- [docs/quickstart.md](docs/quickstart.md): fastest end-to-end local trial
+- [docs/composition-workflows.md](docs/composition-workflows.md): progressive discovery, batch, and scripted composition examples
+- [HANDOFF.md](HANDOFF.md): current operator/developer handoff
