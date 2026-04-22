@@ -1,0 +1,624 @@
+# Toolbox MCP Supervisor Specification
+
+## Summary
+
+Toolbox is a control-plane MCP server that manages other MCP toolsets for a host runtime.
+Its main job is to reduce unnecessary tool exposure, support lazy loading, and make stale
+or restarted toolsets refreshable without forcing users into a brand-new conversation.
+
+Toolbox is not a domain toolset. It does not replace application MCP servers. It sits above
+them as a lightweight supervisor that can discover, activate, refresh, deactivate, and report
+status for managed toolsets.
+
+## Why This Exists
+
+Most agent runtimes load too many tools too early. That creates three problems:
+
+1. Token waste from surfacing large tool catalogs and schemas that are not needed yet.
+2. Cognitive overhead for the model from irrelevant tools being present at the same time.
+3. Fragility when a managed MCP server restarts, changes shape, or drops transport mid-thread.
+
+Toolbox addresses those issues by keeping only a small always-available control surface loaded,
+while the actual domain toolsets are activated on demand.
+
+## Product Thesis
+
+The always-loaded toolset should be tiny. Everything else should be metadata-first and lazy.
+
+The intended flow is:
+
+1. Search for a relevant toolset by metadata.
+2. Activate only the namespaces needed for the current task.
+3. Refresh a toolset when its transport or schema becomes stale.
+4. Deactivate toolsets when they are no longer needed.
+
+This saves tokens by avoiding broad up-front tool schema injection and improves runtime hygiene
+by narrowing the active tool surface to the current task.
+
+## Goals
+
+- Provide a minimal, stable control-plane MCP surface.
+- Support lazy activation of managed MCP toolsets.
+- Support refresh without requiring a fresh conversation.
+- Track toolset liveness, transport state, schema hash, and staleness.
+- Keep refresh and activation safe, atomic, and observable.
+- Support thread-scoped, session-scoped, and global activation policies.
+- Make it easy for hosts to diff old and new tool inventories after refresh.
+
+## Non-Goals
+
+- Toolbox does not implement domain features for other systems.
+- Toolbox does not proxy tool calls in v1.
+- Toolbox does not rewrite or normalize third-party tool schemas in v1.
+- Toolbox does not replace the host application's tool permissions model.
+- Toolbox does not solve auth for every downstream MCP server; it only surfaces status.
+
+## Core Concepts
+
+### Toolset
+
+A managed MCP namespace or server registration, such as `github`, `calendar`, or `docs`.
+
+### Control Plane
+
+The small always-available Toolbox tool surface used to manage toolsets.
+
+### Activation
+
+The act of connecting a managed MCP server and making its tools available to a scope.
+
+### Refresh
+
+The act of reconnecting a managed MCP server, re-reading its tool inventory, validating the
+new schema set, and atomically swapping the active contract.
+
+### Deactivation
+
+The act of removing a toolset from an active scope without deleting its registration.
+
+### Scope
+
+Where a toolset is made available:
+
+- `thread`: only the current thread or conversation
+- `session`: the current client session
+- `global`: every thread in the current client profile
+
+### Stale
+
+A toolset is stale when the last-known tool contract may no longer match the currently running
+server. Typical causes include process restart, transport closure, config change, or schema hash
+difference.
+
+## User Stories
+
+### Story 1: Lazy Activation
+
+As an agent, I want to search available toolsets before loading them so I only pay attention to
+tools relevant to the current task.
+
+### Story 2: Mid-Thread Refresh
+
+As an agent, I want to refresh a stale toolset after a server restart so I can keep working in
+the same thread.
+
+### Story 3: Tool Catalog Narrowing
+
+As an agent, I want to unload toolsets I no longer need so my active tool surface stays compact.
+
+### Story 4: Host Insight
+
+As a host, I want to know which toolsets are loaded, stale, inactive, or failing so I can show
+clear UI and make smart activation decisions.
+
+## High-Level Architecture
+
+```mermaid
+flowchart LR
+    A["Agent / Host Runtime"] --> B["Toolbox MCP Supervisor"]
+    B --> C["Toolset Registry"]
+    B --> D["Transport Manager"]
+    B --> E["Schema Cache"]
+    D --> F["Managed MCP Server A"]
+    D --> G["Managed MCP Server B"]
+    D --> H["Managed MCP Server N"]
+```
+
+## Runtime Components
+
+### 1. Registry
+
+Stores metadata about every known toolset:
+
+- namespace
+- display name
+- description
+- tags
+- transport type
+- launch command or connector id
+- default scope policy
+- auth requirements
+- last known schema hash
+- last activation time
+- last refresh time
+- last error
+
+### 2. Transport Manager
+
+Owns connections to managed MCP servers and is responsible for:
+
+- connect
+- disconnect
+- reconnect
+- health probing
+- stale detection
+- in-flight call awareness
+
+### 3. Schema Cache
+
+Stores the last-known-good tool inventory and hash for each toolset. This enables:
+
+- quick status reporting
+- schema diffs after refresh
+- rollback if a refresh fails validation
+
+### 4. Scope Manager
+
+Tracks which toolsets are active in which scopes. A toolset may be:
+
+- globally active
+- active only for one session
+- active only for one thread
+
+### 5. Event / Audit Log
+
+Optional but strongly recommended. Records:
+
+- activation
+- refresh
+- deactivation
+- stale detection
+- validation failure
+- transport failure
+
+## Control-Plane Tool Surface
+
+These tools should remain small and always available.
+
+### `search_toolsets`
+
+Search toolsets by metadata without loading their full schemas.
+
+#### Arguments
+
+- `query: str`
+- `limit: int = 10`
+- `include_inactive: bool = true`
+
+#### Returns
+
+```json
+{
+  "query": "github pull requests",
+  "count": 2,
+  "results": [
+    {
+      "namespace": "github",
+      "title": "GitHub",
+      "description": "Repository, issue, and pull request tools",
+      "tags": ["git", "repo", "pr"],
+      "transport": "mcp",
+      "loaded": false,
+      "stale": false
+    }
+  ],
+  "error": null
+}
+```
+
+### `list_toolsets`
+
+List all registered toolsets and their current status.
+
+#### Arguments
+
+- `scope: str | null = null`
+
+#### Returns
+
+```json
+{
+  "count": 4,
+  "toolsets": [
+    {
+      "namespace": "github",
+      "loaded": true,
+      "scope": "thread",
+      "stale": false,
+      "transport_state": "connected",
+      "schema_hash": "sha256:abc123",
+      "tool_count": 18,
+      "last_refresh_at": "2026-04-21T10:15:00Z",
+      "last_error": null
+    }
+  ],
+  "error": null
+}
+```
+
+### `get_toolset_status`
+
+Return detailed health and schema status for one or more toolsets.
+
+#### Arguments
+
+- `namespaces: list[str] | null = null`
+
+#### Returns
+
+- registration metadata
+- activation state
+- transport state
+- stale reason
+- schema hash
+- previous schema hash
+- last-known-good timestamp
+- last error
+
+### `activate_toolsets`
+
+Activate one or more toolsets for a target scope.
+
+#### Arguments
+
+- `namespaces: list[str]`
+- `scope: str = "thread"`
+- `if_not_loaded: bool = true`
+
+#### Returns
+
+```json
+{
+  "activated": [
+    {
+      "namespace": "github",
+      "scope": "thread",
+      "tool_count": 18,
+      "schema_hash": "sha256:abc123"
+    }
+  ],
+  "skipped": [],
+  "failed": [],
+  "error": null
+}
+```
+
+### `refresh_toolsets`
+
+Reconnect and atomically refresh one or more toolsets.
+
+#### Arguments
+
+- `namespaces: list[str] | null = null`
+- `if_stale: bool = true`
+- `scope: str | null = null`
+
+#### Returns
+
+```json
+{
+  "refreshed": [
+    {
+      "namespace": "github",
+      "old_schema_hash": "sha256:abc123",
+      "new_schema_hash": "sha256:def456",
+      "added_tools": ["merge_pull_request"],
+      "removed_tools": [],
+      "changed_tools": ["list_pull_requests"]
+    }
+  ],
+  "skipped": [],
+  "failed": [],
+  "error": null
+}
+```
+
+### `deactivate_toolsets`
+
+Remove one or more toolsets from an active scope.
+
+#### Arguments
+
+- `namespaces: list[str]`
+- `scope: str = "thread"`
+- `force: bool = false`
+
+#### Returns
+
+- deactivated toolsets
+- skipped toolsets
+- failures with reasons
+
+### Optional v1.1 Tools
+
+- `register_toolset`
+- `unregister_toolset`
+- `pin_toolsets`
+- `clear_stale_toolsets`
+- `diff_toolset_schema`
+
+These are useful, but not required for the first slice.
+
+## Activation Rules
+
+### Activation Is Additive
+
+Activating a toolset adds it to the target scope without unloading unrelated toolsets.
+
+### Activation Must Validate
+
+Before a toolset becomes active, Toolbox must:
+
+1. establish transport
+2. enumerate tools
+3. compute schema hash
+4. validate the inventory
+5. update scope state only after validation succeeds
+
+### Activation Failure
+
+If activation fails, the toolset remains inactive and Toolbox returns a structured error. It must
+not partially expose a toolset whose schema could not be validated.
+
+## Refresh Semantics
+
+Refresh must be atomic.
+
+### Required Refresh Flow
+
+1. Detect stale or explicit refresh target.
+2. Connect or reconnect the managed server.
+3. Enumerate the new tool inventory.
+4. Compute new schema hash.
+5. Validate names, duplicates, and basic schema integrity.
+6. Compare old and new inventories.
+7. Swap in the new contract only if validation succeeds.
+8. Keep the old contract if refresh fails.
+
+### Refresh Triggers
+
+- explicit user or agent request
+- transport closed
+- managed server restart
+- config file changed
+- schema hash mismatch
+- host startup restoring prior active toolsets
+
+## Deactivation Rules
+
+- Toolbox must not unload itself.
+- Toolbox must not deactivate a toolset with in-flight calls unless `force=true` and the host
+  explicitly allows interruption.
+- Deactivation removes tools from the target scope but keeps registration metadata.
+
+## Token Efficiency Model
+
+The core token-saving assumption is that tool metadata is much cheaper than full tool schemas.
+
+Toolbox should therefore encourage a two-step pattern:
+
+1. Search or list toolsets by compact metadata.
+2. Activate only the specific toolsets needed.
+
+This avoids injecting a large, mostly irrelevant tool catalog into every conversation. It also
+reduces noise when multiple toolsets exist but only one or two are relevant to the current task.
+
+## Data Model
+
+### Toolset Record
+
+```json
+{
+  "namespace": "github",
+  "title": "GitHub",
+  "description": "Repository and pull request tools",
+  "tags": ["git", "repo", "pr"],
+  "transport": {
+    "kind": "stdio",
+    "command": "python",
+    "args": ["server.py"]
+  },
+  "default_scope": "thread",
+  "loaded_scopes": ["thread"],
+  "transport_state": "connected",
+  "stale": false,
+  "stale_reason": null,
+  "schema_hash": "sha256:abc123",
+  "previous_schema_hash": "sha256:old456",
+  "tool_count": 18,
+  "last_activated_at": "2026-04-21T10:00:00Z",
+  "last_refreshed_at": "2026-04-21T10:15:00Z",
+  "last_error": null
+}
+```
+
+### Transport States
+
+- `inactive`
+- `connecting`
+- `connected`
+- `degraded`
+- `stale`
+- `failed`
+
+## Error Model
+
+Every tool should return structured errors with:
+
+- `code`
+- `message`
+- `namespace` where applicable
+- `retryable: bool`
+- optional `details`
+
+Example codes:
+
+- `unknown_toolset`
+- `invalid_scope`
+- `transport_failed`
+- `schema_validation_failed`
+- `already_active`
+- `not_active`
+- `in_flight_calls`
+- `refresh_failed`
+
+## Safety Requirements
+
+### Atomicity
+
+Refresh and activation must be atomic from the host's point of view.
+
+### Last-Known-Good Preservation
+
+If a refresh fails, Toolbox must preserve the previous valid contract.
+
+### Explicit Diff Reporting
+
+Refresh responses must report:
+
+- `added_tools`
+- `removed_tools`
+- `changed_tools`
+
+### In-Flight Awareness
+
+Toolbox should track active calls per toolset and deny unsafe unloads by default.
+
+## Security and Trust
+
+- Toolbox must never fabricate a tool inventory.
+- Toolbox must distinguish between registered toolsets and currently live toolsets.
+- Toolbox should surface auth requirements and auth failures clearly.
+- Toolbox should not silently widen scope from thread to global.
+- Toolbox should log potentially destructive lifecycle operations.
+
+## Suggested Repository Layout
+
+```text
+toolbox/
+├── toolbox/
+│   ├── __init__.py
+│   ├── server.py
+│   ├── registry.py
+│   ├── transport_manager.py
+│   ├── scope_manager.py
+│   ├── schema_cache.py
+│   ├── models.py
+│   ├── validation.py
+│   └── config.py
+├── tests/
+│   ├── test_activation.py
+│   ├── test_refresh.py
+│   ├── test_deactivation.py
+│   ├── test_scope_manager.py
+│   └── test_schema_diff.py
+├── spec.med
+├── HANDOFF.md
+├── README.md
+└── pyproject.toml
+```
+
+## Implementation Notes
+
+### Recommended v1
+
+- Python
+- FastMCP
+- JSON or SQLite-backed registry/cache
+- explicit schema hashing
+- simple in-memory in-flight call counters
+
+### Recommended First Storage Choice
+
+Use JSON for the first version unless concurrent multi-client writes are expected immediately.
+The state surface is small and portability is helpful early on.
+
+## Testing Strategy
+
+### Unit Tests
+
+- register and list toolsets
+- activate known toolset
+- reject unknown toolset
+- refresh with no schema changes
+- refresh with added, removed, and changed tools
+- preserve last-known-good on failed refresh
+- reject unsafe deactivation while calls are in flight
+- scope isolation across thread/session/global
+
+### Integration Tests
+
+- activate a fake MCP server and verify tools become visible
+- restart the fake MCP server and verify stale detection
+- refresh after restart and verify schema swap
+- deactivate and verify tool removal from scope
+
+### Failure Injection
+
+- transport closed mid-refresh
+- malformed tool inventory
+- duplicate tool names
+- partial reconnect success
+- auth failure on activation
+
+## Milestones
+
+### Milestone 1: Registry and Static Discovery
+
+- registry data model
+- `search_toolsets`
+- `list_toolsets`
+- `get_toolset_status`
+
+### Milestone 2: Activation
+
+- transport bootstrap
+- schema enumeration
+- scoped activation
+
+### Milestone 3: Refresh and Diff
+
+- stale detection
+- atomic refresh
+- schema diff reporting
+
+### Milestone 4: Deactivation and Safety
+
+- in-flight protection
+- force semantics
+- audit logging
+
+## Acceptance Criteria
+
+- A host can list available toolsets without loading their full schemas.
+- A host can activate a toolset for a thread and see it become available.
+- A stale toolset can be refreshed in the same conversation without requiring a new thread.
+- Refresh reports added, removed, and changed tools.
+- Failed refreshes preserve the previous valid contract.
+- Toolsets can be deactivated safely and scoped correctly.
+
+## Open Questions
+
+1. Should Toolbox own toolset registration, or should it only manage registrations supplied by the host?
+2. Should per-thread activation state live in the Toolbox process, the host, or both?
+3. Should v1 support app/connector-backed toolsets differently from stdio MCP servers?
+4. Should schema diffing be shallow name-based only in v1, or compare parameter shapes too?
+5. Should stale detection be passive only, or should Toolbox support periodic background health checks?
+
+## Recommended Default Answers
+
+1. Manage host-supplied registrations in v1; add self-service registration later.
+2. Mirror scope state in Toolbox, with the host as the ultimate UI authority.
+3. Yes, but behind one abstract transport layer.
+4. Compare both tool names and input/output schema hashes.
+5. Start passive, then add optional heartbeat health checks.
