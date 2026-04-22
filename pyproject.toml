@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "toolbox-mcp"
+version = "0.1.0"
+description = "A control-plane MCP server for lifecycle management of other toolsets."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "cryptography>=42.0.0",
+  "mcp>=1.23.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.23.7",
+]
+
+[project.scripts]
+toolbox-mcp = "toolbox.server:main"
+toolbox-fake-mcp = "toolbox.fake_managed_server:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["toolbox*"]
