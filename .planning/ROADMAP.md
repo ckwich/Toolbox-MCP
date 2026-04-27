@@ -18,6 +18,7 @@ state-compatibility notes, and a current operational handoff.
 - [x] **Phase 4: Health Monitoring and Recovery** - Add optional health checks, restore flows, and stale-state reconciliation
 - [x] **Phase 5: Composition UX and Runtime Tuning** - Improve discovery and programmatic composition ergonomics on top of the hardened harness
 - [x] **Phase 6: Release and Operability Polish** - Add CI, first-run guidance, compatibility notes, and a current operational handoff
+- [x] **Phase 7: Agent-Facing Discovery** - Make deferred capabilities self-describing enough for agents to know when to ask Toolbox
 
 ## Phase Details
 
@@ -107,6 +108,20 @@ Plans:
 Plans:
 - [x] 06-01: Add CI, first-run guidance, compatibility notes, and an operational handoff
 
+### Phase 7: Agent-Facing Discovery
+**Goal**: Give agents a tiny orientation layer for deferred capabilities without widening the default tool surface.
+**Depends on**: Phase 6
+**Requirements**: AGENT-01, AGENT-02, AGENT-03, AGENT-04
+**Success Criteria** (what must be TRUE):
+1. Agents can ask one cheap tool for the categories and examples of deferred capabilities currently registered in Toolbox.
+2. Toolset registrations can carry agent-facing hints such as category, aliases, examples, activation guidance, cost, latency, and trust.
+3. Search and suggestions use those hints so broad task intent can find a relevant hidden toolset.
+4. The default Toolbox surface stays small and does not expose downstream raw schemas just to teach the agent what exists.
+**Plans**: 1 plan
+
+Plans:
+- [x] 07-01: Add overview, rich metadata, and task-based toolset suggestions
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -117,3 +132,4 @@ Plans:
 | 4. Health Monitoring and Recovery | 2/2 | Completed | 04-01, 04-02 |
 | 5. Composition UX and Runtime Tuning | 2/2 | Completed | 05-01, 05-02 |
 | 6. Release and Operability Polish | 1/1 | Completed | 06-01 |
+| 7. Agent-Facing Discovery | 1/1 | Completed | 07-01 |

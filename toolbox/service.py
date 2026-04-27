@@ -42,9 +42,14 @@ from toolbox.models import (
     ToolSchema,
     ToolContractDelta,
     ToolContractSummary,
+    ToolboxCategoryOverview,
+    ToolboxOverview,
     ToolsetContractDiff,
     ToolsetContractInspection,
     ToolsetRecord,
+    ToolsetSuggestion,
+    ToolsetSuggestionResult,
+    ToolsetSummary,
     ToolsetTransport,
     TransportRuntimeBudget,
     TransportState,
@@ -109,6 +114,16 @@ class ToolboxService:
             title="Fake Managed Stdio Toolset",
             description="A fake managed MCP server used to prove activation, refresh, and deactivation flows.",
             tags=["fake", "test", "stdio", "managed"],
+            category="testing",
+            aliases=["fake toolset", "managed test server"],
+            examples=[
+                "Prove a host can activate and call a managed toolset.",
+                "Smoke-test Toolbox registration and lifecycle behavior.",
+            ],
+            activation_hint="Activate this when validating Toolbox itself or exercising the fake stdio flow.",
+            cost_hint="low",
+            latency_hint="low",
+            trust_hint="local-test",
             transport={
                 "kind": "stdio",
                 "command": command,
@@ -231,21 +246,13 @@ class ToolboxService:
 
     def search_toolsets(self, query: str, limit: int = 10, include_inactive: bool = True) -> dict[str, Any]:
         query_terms = [term for term in query.lower().split() if term]
-        ranked: list[tuple[int, ToolsetRecord]] = []
+        ranked: list[tuple[int, ToolsetRecord, list[str]]] = []
         for record in self._load_all_records():
             if not include_inactive and not record.loaded_scopes:
                 continue
-            haystack = " ".join(
-                [
-                    record.namespace,
-                    record.title,
-                    record.description,
-                    " ".join(record.tags),
-                ]
-            ).lower()
-            score = sum(1 for term in query_terms if term in haystack)
+            score, reasons = self._score_record_for_terms(record, query_terms)
             if score > 0 or not query_terms:
-                ranked.append((score, record))
+                ranked.append((score, record, reasons))
 
         ranked.sort(key=lambda item: (-item[0], item[1].namespace))
         results = [
@@ -253,14 +260,140 @@ class ToolboxService:
                 "namespace": record.namespace,
                 "title": record.title,
                 "description": record.description,
+                "category": record.category,
                 "tags": record.tags,
+                "aliases": record.aliases,
+                "examples": record.examples[:3],
+                "activation_hint": record.activation_hint,
+                "cost_hint": record.cost_hint,
+                "latency_hint": record.latency_hint,
+                "trust_hint": record.trust_hint,
+                "score": score,
+                "reasons": reasons,
                 "transport": record.transport.kind,
                 "loaded": bool(record.loaded_scopes),
                 "stale": record.stale,
             }
-            for _, record in ranked[:limit]
+            for score, record, reasons in ranked[:limit]
         ]
         return {"query": query, "count": len(results), "results": results, "error": None}
+
+    def toolbox_overview(self, max_toolsets_per_category: int = 5) -> dict[str, Any]:
+        records = sorted(self._load_all_records(), key=lambda item: (item.category, item.namespace))
+        categories: dict[str, list[ToolsetRecord]] = {}
+        for record in records:
+            categories.setdefault(record.category, []).append(record)
+
+        category_overviews: list[ToolboxCategoryOverview] = []
+        for category, category_records in sorted(categories.items()):
+            examples = self._dedupe_strings(
+                example
+                for record in category_records
+                for example in record.examples[:2]
+            )[:3]
+            category_overviews.append(
+                ToolboxCategoryOverview(
+                    category=category,
+                    count=len(category_records),
+                    loaded_count=sum(1 for record in category_records if record.loaded_scopes),
+                    stale_count=sum(1 for record in category_records if record.stale),
+                    examples=examples,
+                    toolsets=[
+                        self._toolset_summary(record)
+                        for record in category_records[: max(0, max_toolsets_per_category)]
+                    ],
+                )
+            )
+
+        overview = ToolboxOverview(
+            purpose=(
+                "Toolbox keeps deferred MCP toolsets discoverable without loading every downstream "
+                "tool schema into the always-on surface."
+            ),
+            when_to_use=[
+                "Search Toolbox when the visible tools do not cover the task.",
+                "Search Toolbox when a task mentions skills, docs, scans, SaaS systems, browser/app automation, or project-specific capabilities.",
+                "Activate only the selected toolsets needed for the current task, then deactivate them when done.",
+            ],
+            discovery_tools=[
+                {
+                    "name": "search_toolsets",
+                    "use": "Find registered toolsets by keyword, category, alias, example, or activation hint.",
+                },
+                {
+                    "name": "suggest_toolsets_for_task",
+                    "use": "Ask Toolbox for a short ranked list of toolsets relevant to the current task.",
+                },
+                {
+                    "name": "activate_toolsets",
+                    "use": "Mount selected downstream tools under namespace.tool names after choosing a toolset.",
+                },
+            ],
+            category_count=len(category_overviews),
+            toolset_count=len(records),
+            categories=category_overviews,
+        )
+        payload = overview.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def suggest_toolsets_for_task(
+        self,
+        task: str,
+        limit: int = 5,
+        include_inactive: bool = True,
+    ) -> dict[str, Any]:
+        task_terms = [term for term in task.lower().split() if term]
+        if not task_terms:
+            return {
+                "task": task,
+                "count": 0,
+                "suggestions": [],
+                "searched_fields": self._agent_discovery_fields(),
+                "error": self._error("invalid_task", "Task must include at least one search term."),
+            }
+
+        ranked: list[tuple[int, ToolsetRecord, list[str]]] = []
+        for record in self._load_all_records():
+            if not include_inactive and not record.loaded_scopes:
+                continue
+            score, reasons = self._score_record_for_terms(record, task_terms)
+            if score > 0:
+                ranked.append((score, record, reasons))
+
+        ranked.sort(key=lambda item: (-item[0], item[1].stale, item[1].namespace))
+        suggestions = [
+            ToolsetSuggestion(
+                namespace=record.namespace,
+                title=record.title,
+                description=record.description,
+                category=record.category,
+                score=score,
+                reasons=reasons[:5],
+                tags=record.tags,
+                aliases=record.aliases,
+                examples=record.examples[:3],
+                activation_hint=record.activation_hint,
+                cost_hint=record.cost_hint,
+                latency_hint=record.latency_hint,
+                trust_hint=record.trust_hint,
+                loaded=bool(record.loaded_scopes),
+                stale=record.stale,
+                transport_state=record.transport_state,
+                tool_count=record.tool_count,
+                auth_required=record.auth_required,
+            )
+            for score, record, reasons in ranked[: max(0, limit)]
+        ]
+        result = ToolsetSuggestionResult(
+            task=task,
+            count=len(suggestions),
+            suggestions=suggestions,
+            searched_fields=self._agent_discovery_fields(),
+        )
+        payload = result.model_dump(mode="json")
+        payload["error"] = None
+        return payload
 
     def list_toolsets(self, scope: str | None = None) -> dict[str, Any]:
         scope_value = None
@@ -281,6 +414,16 @@ class ToolboxService:
             toolsets.append(
                 {
                     "namespace": record.namespace,
+                    "title": record.title,
+                    "description": record.description,
+                    "category": record.category,
+                    "tags": record.tags,
+                    "aliases": record.aliases,
+                    "examples": record.examples[:3],
+                    "activation_hint": record.activation_hint,
+                    "cost_hint": record.cost_hint,
+                    "latency_hint": record.latency_hint,
+                    "trust_hint": record.trust_hint,
                     "loaded": bool(record.loaded_scopes),
                     "scope": [item.value for item in record.loaded_scopes],
                     "recoverable_scopes": [item.value for item in record.recoverable_scopes],
@@ -855,7 +998,14 @@ class ToolboxService:
                         "namespace": record.namespace,
                         "title": record.title,
                         "description": record.description,
+                        "category": record.category,
                         "tags": record.tags,
+                        "aliases": record.aliases,
+                        "examples": record.examples,
+                        "activation_hint": record.activation_hint,
+                        "cost_hint": record.cost_hint,
+                        "latency_hint": record.latency_hint,
+                        "trust_hint": record.trust_hint,
                         "transport": self._public_transport(record.transport),
                         "default_scope": record.default_scope.value,
                         "scope_policy": self._scope_policy(record),
@@ -916,6 +1066,13 @@ class ToolboxService:
         description: str,
         transport: dict[str, Any],
         tags: list[str] | None = None,
+        category: str = "general",
+        aliases: list[str] | None = None,
+        examples: list[str] | None = None,
+        activation_hint: str | None = None,
+        cost_hint: str | None = None,
+        latency_hint: str | None = None,
+        trust_hint: str = "unknown",
         default_scope: str = "thread",
         supported_scopes: list[str] | None = None,
         restorable_scopes: list[str] | None = None,
@@ -983,7 +1140,14 @@ class ToolboxService:
                         "namespace": namespace,
                         "title": title,
                         "description": description,
-                        "tags": sorted(set(tags or [])),
+                        "tags": self._dedupe_strings(tags or []),
+                        "category": self._normalize_category(category),
+                        "aliases": self._dedupe_strings(aliases or []),
+                        "examples": self._dedupe_strings(examples or []),
+                        "activation_hint": self._clean_optional_text(activation_hint),
+                        "cost_hint": self._clean_optional_text(cost_hint),
+                        "latency_hint": self._clean_optional_text(latency_hint),
+                        "trust_hint": self._clean_optional_text(trust_hint) or "unknown",
                         "transport": normalized_transport.model_dump(mode="python"),
                         "default_scope": default_scope,
                         "supported_scopes": supported_scopes if supported_scopes is not None else list(Scope),
@@ -1020,6 +1184,7 @@ class ToolboxService:
                 details={
                     "transport_kind": record.transport.kind,
                     "auth_required": record.auth_required,
+                    "category": record.category,
                     "supported_scopes": [scope.value for scope in record.supported_scopes],
                     "restorable_scopes": [scope.value for scope in record.restorable_scopes],
                 },
@@ -1029,7 +1194,14 @@ class ToolboxService:
                     "namespace": record.namespace,
                     "title": record.title,
                     "description": record.description,
+                    "category": record.category,
                     "tags": record.tags,
+                    "aliases": record.aliases,
+                    "examples": record.examples,
+                    "activation_hint": record.activation_hint,
+                    "cost_hint": record.cost_hint,
+                    "latency_hint": record.latency_hint,
+                    "trust_hint": record.trust_hint,
                     "transport": self._public_transport(record.transport),
                     "default_scope": record.default_scope.value,
                     "scope_policy": self._scope_policy(record),
@@ -1985,6 +2157,104 @@ class ToolboxService:
             item_type=item_type if isinstance(item_type, str) else None,
             has_additional_properties=additional_properties if isinstance(additional_properties, bool) else None,
         )
+
+    @staticmethod
+    def _agent_discovery_fields() -> list[str]:
+        return [
+            "namespace",
+            "title",
+            "description",
+            "category",
+            "tags",
+            "aliases",
+            "examples",
+            "activation_hint",
+        ]
+
+    @staticmethod
+    def _clean_optional_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @staticmethod
+    def _dedupe_strings(values: Any) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            cleaned = value.strip()
+            if not cleaned:
+                continue
+            key = cleaned.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(cleaned)
+        return result
+
+    @staticmethod
+    def _normalize_category(value: str | None) -> str:
+        cleaned = (value or "general").strip().lower().replace(" ", "_")
+        normalized = "".join(character for character in cleaned if character.isalnum() or character in {"_", "-"})
+        return normalized or "general"
+
+    def _toolset_summary(self, record: ToolsetRecord) -> ToolsetSummary:
+        return ToolsetSummary(
+            namespace=record.namespace,
+            title=record.title,
+            description=record.description,
+            category=record.category,
+            tags=record.tags,
+            aliases=record.aliases,
+            examples=record.examples[:3],
+            activation_hint=record.activation_hint,
+            cost_hint=record.cost_hint,
+            latency_hint=record.latency_hint,
+            trust_hint=record.trust_hint,
+            loaded=bool(record.loaded_scopes),
+            stale=record.stale,
+            transport_state=record.transport_state,
+            tool_count=record.tool_count,
+            auth_required=record.auth_required,
+        )
+
+    def _score_record_for_terms(self, record: ToolsetRecord, terms: list[str]) -> tuple[int, list[str]]:
+        if not terms:
+            return 0, []
+
+        weighted_fields: list[tuple[str, str, int]] = [
+            ("namespace", record.namespace, 4),
+            ("title", record.title, 4),
+            ("category", record.category, 5),
+            ("description", record.description, 3),
+            ("activation_hint", record.activation_hint or "", 3),
+            ("tags", " ".join(record.tags), 4),
+            ("aliases", " ".join(record.aliases), 4),
+            ("examples", " ".join(record.examples), 2),
+        ]
+
+        score = 0
+        reasons: list[str] = []
+        for term in terms:
+            for field, value, weight in weighted_fields:
+                if term not in value.lower():
+                    continue
+                score += weight
+                reason = f"matched {field}: {term}"
+                if reason not in reasons:
+                    reasons.append(reason)
+
+        if score > 0:
+            if record.loaded_scopes:
+                reasons.append("already loaded")
+                score += 1
+            if record.stale:
+                reasons.append("currently stale")
+                score -= 2
+        return max(score, 0), reasons
 
     @staticmethod
     def _public_transport(transport: ToolsetTransport) -> dict[str, Any]:

@@ -91,6 +91,13 @@ class ToolsetRecord(BaseModel):
     title: str
     description: str
     tags: list[str] = Field(default_factory=list)
+    category: str = "general"
+    aliases: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    activation_hint: str | None = None
+    cost_hint: str | None = None
+    latency_hint: str | None = None
+    trust_hint: str = "unknown"
     transport: ToolsetTransport
     default_scope: Scope = Scope.THREAD
     supported_scopes: list[Scope] = Field(default_factory=lambda: list(Scope))
@@ -123,6 +130,7 @@ class ToolsetRecord(BaseModel):
         self.restorable_scopes = _ordered_unique_scopes(self.restorable_scopes)
         self.recoverable_scopes = _ordered_unique_scopes(self.recoverable_scopes)
         self.loaded_scopes = _ordered_unique_scopes(self.loaded_scopes)
+        self.category = self.category.strip().lower().replace(" ", "_") or "general"
 
         if self.default_scope not in self.supported_scopes:
             raise ValueError(
@@ -348,10 +356,82 @@ class SearchResult(BaseModel):
     namespace: str
     title: str
     description: str
+    category: str
     tags: list[str]
+    aliases: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    activation_hint: str | None = None
+    cost_hint: str | None = None
+    latency_hint: str | None = None
+    trust_hint: str = "unknown"
     transport: str
     loaded: bool
     stale: bool
+
+
+class ToolsetSummary(BaseModel):
+    namespace: str
+    title: str
+    description: str
+    category: str
+    tags: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    activation_hint: str | None = None
+    cost_hint: str | None = None
+    latency_hint: str | None = None
+    trust_hint: str = "unknown"
+    loaded: bool = False
+    stale: bool = False
+    transport_state: TransportState = TransportState.INACTIVE
+    tool_count: int = 0
+    auth_required: bool = False
+
+
+class ToolboxCategoryOverview(BaseModel):
+    category: str
+    count: int
+    loaded_count: int = 0
+    stale_count: int = 0
+    examples: list[str] = Field(default_factory=list)
+    toolsets: list[ToolsetSummary] = Field(default_factory=list)
+
+
+class ToolboxOverview(BaseModel):
+    purpose: str
+    when_to_use: list[str] = Field(default_factory=list)
+    discovery_tools: list[dict[str, str]] = Field(default_factory=list)
+    category_count: int
+    toolset_count: int
+    categories: list[ToolboxCategoryOverview] = Field(default_factory=list)
+
+
+class ToolsetSuggestion(BaseModel):
+    namespace: str
+    title: str
+    description: str
+    category: str
+    score: int
+    reasons: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    activation_hint: str | None = None
+    cost_hint: str | None = None
+    latency_hint: str | None = None
+    trust_hint: str = "unknown"
+    loaded: bool = False
+    stale: bool = False
+    transport_state: TransportState = TransportState.INACTIVE
+    tool_count: int = 0
+    auth_required: bool = False
+
+
+class ToolsetSuggestionResult(BaseModel):
+    task: str
+    count: int
+    suggestions: list[ToolsetSuggestion] = Field(default_factory=list)
+    searched_fields: list[str] = Field(default_factory=list)
 
 
 class ActivationResult(BaseModel):

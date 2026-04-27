@@ -119,6 +119,70 @@ async def test_scope_policy_is_visible_in_list_and_status(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_agent_metadata_overview_search_and_suggestions_find_skill_loader(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+
+    try:
+        registration = await service.register_toolset(
+            namespace="skills_loader",
+            title="Skills Loader",
+            description="Load deferred task skills and procedural instructions.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server"],
+                "cwd": str(tmp_path),
+            },
+            tags=["skills", "procedures", "instructions"],
+            category="Skills",
+            aliases=["skill loader", "procedural guidance"],
+            examples=[
+                "Need a task-specific skill before specialized work.",
+                "Find available procedural guidance.",
+            ],
+            activation_hint="Activate when the task calls for a skill, procedure, or specialized workflow.",
+            cost_hint="low",
+            latency_hint="low",
+            trust_hint="local",
+        )
+        assert registration["error"] is None
+        assert registration["registered"]["category"] == "skills"
+        assert registration["registered"]["aliases"] == ["skill loader", "procedural guidance"]
+
+        overview = service.toolbox_overview()
+        skills_category = next(item for item in overview["categories"] if item["category"] == "skills")
+        assert skills_category["count"] == 1
+        assert skills_category["toolsets"][0]["namespace"] == "skills_loader"
+        assert skills_category["toolsets"][0]["activation_hint"].startswith("Activate when")
+
+        search = service.search_toolsets("procedural guidance")
+        assert search["results"][0]["namespace"] == "skills_loader"
+        assert "aliases" in search["results"][0]["reasons"][0] or any(
+            "aliases" in reason for reason in search["results"][0]["reasons"]
+        )
+
+        suggestions = service.suggest_toolsets_for_task("I need a task-specific skill for this workflow")
+        assert suggestions["error"] is None
+        assert suggestions["suggestions"][0]["namespace"] == "skills_loader"
+        assert suggestions["suggestions"][0]["category"] == "skills"
+
+        status = service.get_toolset_status(["skills_loader"])
+        registration_status = status["toolsets"][0]["registration"]
+        assert registration_status["trust_hint"] == "local"
+        assert registration_status["cost_hint"] == "low"
+
+        listing = service.list_toolsets()
+        listed = next(item for item in listing["toolsets"] if item["namespace"] == "skills_loader")
+        assert listed["category"] == "skills"
+        assert listed["examples"] == [
+            "Need a task-specific skill before specialized work.",
+            "Find available procedural guidance.",
+        ]
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_inspect_cached_contracts_returns_summary_without_reactivation(tmp_path: Path) -> None:
     state_path = tmp_path / ".toolbox" / "state.json"
     service = create_service(tmp_path)
@@ -2191,6 +2255,63 @@ def parse_result_payload(result) -> dict:
     text_blocks = [block.text for block in result.content if hasattr(block, "text")]
     assert text_blocks
     return json.loads(text_blocks[0])
+
+
+@pytest.mark.asyncio
+async def test_server_exposes_agent_facing_overview_and_suggestions(tmp_path: Path) -> None:
+    state_path = tmp_path / ".toolbox" / "state.json"
+    server = create_server(state_path=state_path)
+
+    try:
+        async with create_connected_server_and_client_session(server) as client:
+            initial_tools = await client.list_tools()
+            initial_tool_names = {tool.name for tool in initial_tools.tools}
+            assert "toolbox_overview" in initial_tool_names
+            assert "suggest_toolsets_for_task" in initial_tool_names
+
+            registration = await client.call_tool(
+                "register_toolset",
+                {
+                    "namespace": "skills_loader",
+                    "title": "Skills Loader",
+                    "description": "Load deferred task skills and procedural instructions.",
+                    "transport": {
+                        "kind": "stdio",
+                        "command": sys.executable,
+                        "args": ["-m", "toolbox.fake_managed_server"],
+                        "cwd": str(tmp_path),
+                    },
+                    "tags": ["skills", "procedures"],
+                    "category": "skills",
+                    "aliases": ["skill loader", "procedural guidance"],
+                    "examples": ["Need a task-specific skill before specialized work."],
+                    "activation_hint": "Activate when the task needs a skill or procedural workflow.",
+                    "cost_hint": "low",
+                    "latency_hint": "low",
+                    "trust_hint": "local",
+                },
+            )
+            registration_payload = parse_result_payload(registration)
+            assert registration_payload["error"] is None
+
+            overview = await client.call_tool("toolbox_overview", {})
+            overview_payload = parse_result_payload(overview)
+            assert overview_payload["error"] is None
+            categories = {item["category"]: item for item in overview_payload["categories"]}
+            assert "skills" in categories
+            assert categories["skills"]["toolsets"][0]["namespace"] == "skills_loader"
+
+            suggestions = await client.call_tool(
+                "suggest_toolsets_for_task",
+                {"task": "Load the right task-specific skill for this workflow."},
+            )
+            suggestions_payload = parse_result_payload(suggestions)
+            assert suggestions_payload["error"] is None
+            assert suggestions_payload["suggestions"][0]["namespace"] == "skills_loader"
+            assert suggestions_payload["suggestions"][0]["activation_hint"].startswith("Activate when")
+    finally:
+        await shutdown_server(server)
+        del server
 
 
 @pytest.mark.asyncio

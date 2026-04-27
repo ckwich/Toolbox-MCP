@@ -26,12 +26,13 @@ Hosts can keep their always-on MCP surface tiny while still invoking the right t
 - ✓ Hosts now have concrete composition workflows, examples, and narrow program return affordances for selected variables and contract summaries — Phase 5 / 05-02
 - ✓ The repo now has cross-platform CI coverage for the verified runtime surface, including the strict Windows unraisable-warning lane — Phase 6 / 06-01
 - ✓ Top-level docs now include a first-run quickstart, state-compatibility notes, and a current operational handoff — Phase 6 / 06-01
+- ✓ Agents can now ask for a compact Toolbox overview and task-ranked toolset suggestions backed by richer registration metadata — Phase 7 / 07-01
 - ✓ Toolbox supports single-request batch composition and constrained scripted composition over mounted tools — existing
 - ✓ Harness behavior is bounded and structured: lifecycle serialization, runtime timeouts, and stable failure envelopes are already in place — existing
 
 ### Active
 
-No active v1 roadmap items remain. Future work should start as a new planned milestone or
+No active roadmap items remain. Future work should start as a new planned milestone or
 come from the deferred list intentionally.
 
 ### Out of Scope
@@ -78,6 +79,7 @@ come from the deferred list intentionally.
 | Program results should be able to echo only explicitly requested helper metadata | Hosts often need a narrow post-run contract view without reloading the full mounted inventory or leaking the whole initial context | ✓ Good |
 | Post-v1 polish should improve verification and operator clarity instead of adding more product surface | The runtime and control-plane behavior are already feature-complete for the current milestone; the bigger risk is drift or onboarding friction | ✓ Good |
 | CI must keep both the general lane and the strict Windows unraisable-warning lane | The repo has platform-sensitive subprocess behavior, so “passes on one machine” is not strong enough release evidence | ✓ Good |
+| Toolbox needs an agent orientation layer in addition to raw search | Hidden capabilities are only useful if the agent can cheaply learn that categories such as skills, docs, or security scanning exist | ✓ Good |
 
 ## Evolution
 
@@ -96,4 +98,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Refresh Context with new product and codebase reality.
 
 ---
-*Last updated: 2026-04-22 after completing 06-01 release, CI, and documentation polish*
+*Last updated: 2026-04-27 after completing Phase 7 agent-facing discovery*

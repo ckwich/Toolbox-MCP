@@ -5,21 +5,21 @@
 See: `.planning/PROJECT.md` (updated 2026-04-22)
 
 **Core value:** Hosts can keep their always-on MCP surface tiny while still invoking the right toolsets on demand in the same thread.
-**Current focus:** Post-v1 release polish completed - repo is ready for real host exercise or a new milestone
+**Current focus:** Phase 7 agent-facing discovery completed - repo is ready for live Toolbox use and follow-on testing
 
 ## Current Position
 
-Phase: 6 of 6 (Release and Operability Polish)
+Phase: 7 of 7 (Agent-Facing Discovery)
 Plan: 1 of 1 in current phase
 Status: Completed
-Last activity: 2026-04-22 - Completed 06-01 release, CI, and documentation polish
+Last activity: 2026-04-27 - Completed 07-01 overview, metadata, and task suggestions
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: -
 - Total execution time: 0.0 hours
 
@@ -33,9 +33,10 @@ Progress: [██████████] 100%
 | 4. Health Monitoring and Recovery | 2 | - | - |
 | 5. Composition UX and Runtime Tuning | 2 | - | - |
 | 6. Release and Operability Polish | 1 | - | - |
+| 7. Agent-Facing Discovery | 1/1 | - | - |
 
 **Recent Trend:**
-- Last 5 plans: 04-01, 04-02, 05-01, 05-02, 06-01
+- Last 5 plans: 04-02, 05-01, 05-02, 06-01, 07-01
 - Trend: Stable
 
 ## Accumulated Context
@@ -56,7 +57,7 @@ Recent decisions affecting current work:
 - Recovery now preserves `recoverable_scopes` across startup, restores only policy-eligible scopes, and exposes stale reconciliation as an explicit control-plane action.
 - Composition prep now has a cheap live tool-description surface and an explicit runtime-budget inspection surface, separate from heavier toolset-level contract inspection.
 - Program results can now return only explicitly requested variables and mounted-tool summaries, and the repo includes a concrete host-facing composition workflow guide.
-- Post-v1 polish now adds CI, first-run docs, state-compatibility notes, and a current operational handoff instead of widening the product surface further.
+- Agent-facing discovery should add orientation and intent hints without exposing every downstream schema by default.
 
 ### Pending Todos
 

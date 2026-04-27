@@ -28,7 +28,8 @@ class ToolboxServer(FastMCP):
             name="Toolbox",
             instructions=(
                 "Toolbox is a control-plane MCP that lets hosts search, activate, refresh, "
-                "inspect, and deactivate managed toolsets without eagerly loading all schemas."
+                "inspect, and deactivate managed toolsets without eagerly loading all schemas. "
+                "Call toolbox_overview or suggest_toolsets_for_task when a task may need hidden capabilities."
             ),
             lifespan=lifespan,
         )
@@ -69,9 +70,40 @@ def create_server(
     )
     server = ToolboxServer(service)
 
-    @server.tool(description="Search registered toolsets by metadata without loading full schemas.")
+    @server.tool(
+        description=(
+            "Get a compact orientation to deferred Toolbox capabilities by category. "
+            "Use this when you need to know what hidden toolsets may be available without activating them."
+        )
+    )
+    def toolbox_overview(max_toolsets_per_category: int = 5) -> dict[str, object]:
+        return service.toolbox_overview(max_toolsets_per_category=max_toolsets_per_category)
+
+    @server.tool(
+        description=(
+            "Search registered deferred toolsets by namespace, title, description, category, tags, aliases, examples, "
+            "and activation hints without loading full downstream schemas."
+        )
+    )
     def search_toolsets(query: str, limit: int = 10, include_inactive: bool = True) -> dict[str, object]:
         return service.search_toolsets(query=query, limit=limit, include_inactive=include_inactive)
+
+    @server.tool(
+        description=(
+            "Suggest a short ranked list of deferred toolsets for the current task. "
+            "Use this when a task may need capabilities that are not currently visible."
+        )
+    )
+    def suggest_toolsets_for_task(
+        task: str,
+        limit: int = 5,
+        include_inactive: bool = True,
+    ) -> dict[str, object]:
+        return service.suggest_toolsets_for_task(
+            task=task,
+            limit=limit,
+            include_inactive=include_inactive,
+        )
 
     @server.tool(description="List registered toolsets and their current status.")
     def list_toolsets(scope: str | None = None) -> dict[str, object]:
@@ -166,6 +198,13 @@ def create_server(
         description: str,
         transport: dict[str, object],
         tags: list[str] | None = None,
+        category: str = "general",
+        aliases: list[str] | None = None,
+        examples: list[str] | None = None,
+        activation_hint: str | None = None,
+        cost_hint: str | None = None,
+        latency_hint: str | None = None,
+        trust_hint: str = "unknown",
         default_scope: str = "thread",
         supported_scopes: list[str] | None = None,
         restorable_scopes: list[str] | None = None,
@@ -179,6 +218,13 @@ def create_server(
             description=description,
             transport=transport,
             tags=tags,
+            category=category,
+            aliases=aliases,
+            examples=examples,
+            activation_hint=activation_hint,
+            cost_hint=cost_hint,
+            latency_hint=latency_hint,
+            trust_hint=trust_hint,
             default_scope=default_scope,
             supported_scopes=supported_scopes,
             restorable_scopes=restorable_scopes,

@@ -12,6 +12,7 @@ This first implementation focuses on a narrow end-to-end loop:
 - JSON-backed registry and schema cache
 - metadata-first discovery tools
 - control-plane registration management via `register_toolset` and `unregister_toolsets`
+- agent-facing discovery via `toolbox_overview` and `suggest_toolsets_for_task`
 - scoped activation, live mounting, refresh, and deactivation
 - bounded lifecycle audit logging with control-plane querying
 - cached and mounted contract inspection with compact schema summaries
@@ -36,6 +37,23 @@ are removed again.
 
 Toolbox can now register additional managed stdio toolsets through its own MCP surface,
 so hosts do not need to pre-seed every registration directly in the state file.
+
+`toolbox_overview` is the tiny agent-facing map for deferred capabilities. It groups
+registered toolsets by category and returns compact examples, hints, and toolset
+summaries without activating anything or loading downstream schemas.
+
+`suggest_toolsets_for_task` turns a task description into a short ranked list of
+registered toolsets. It searches namespace, title, description, category, tags, aliases,
+examples, and activation hints, which lets an agent find a hidden skill loader or scanner
+by intent instead of by exact toolset name.
+
+Toolset registrations now support agent-facing metadata fields:
+
+- `category`: coarse capability bucket such as `skills`, `docs`, `security`, or `automation`
+- `aliases`: alternate names or phrases an agent might use
+- `examples`: short tasks that should make the agent consider the toolset
+- `activation_hint`: when to activate the toolset
+- `cost_hint`, `latency_hint`, and `trust_hint`: compact planning signals for choosing among candidates
 
 `run_tool_batch` provides a first step toward programmatic tool calling. It lets one
 Toolbox call execute multiple mounted tool calls and pass data from earlier steps into
@@ -272,6 +290,12 @@ deactivation, unregistration, and mounted-tool runtime failures such as call tim
 or downstream transport exits.
 
 ## Introspection
+
+The current agent-facing discovery surface is:
+
+- `toolbox_overview`: see registered deferred capability categories and small examples
+- `suggest_toolsets_for_task`: get a ranked shortlist of toolsets for a task description
+- `search_toolsets`: search registered toolsets by metadata and agent-facing hints
 
 The current contract inspection surface is:
 

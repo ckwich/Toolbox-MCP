@@ -63,6 +63,16 @@ Current phase note:
 Current phase note:
 - `06-01` delivered a GitHub Actions matrix, preserved the strict Windows warning lane, added a first-run quickstart, documented state compatibility and transport-secret persistence, and replaced the stale bootstrap handoff
 
+### Agent-Facing Discovery
+
+- [x] **AGENT-01**: Agent can get a compact overview of registered deferred capability categories without activating toolsets
+- [x] **AGENT-02**: Toolset registrations can carry category, aliases, examples, activation hints, cost hints, latency hints, and trust hints
+- [x] **AGENT-03**: Toolset search and task suggestions use the agent-facing metadata, not only namespace/title/description/tags
+- [x] **AGENT-04**: Agent-facing discovery output stays metadata-first and does not expose raw downstream schemas or transport secrets
+
+Current phase note:
+- `07-01` delivered `toolbox_overview`, `suggest_toolsets_for_task`, richer registration metadata, metadata-aware search, MCP exposure, docs, and service/server regression tests
+
 ## v2 Requirements
 
 ### Transports
@@ -112,12 +122,16 @@ Current phase note:
 | OPS-02 | Phase 6 | Completed |
 | OPS-03 | Phase 6 | Completed |
 | OPS-04 | Phase 6 | Completed |
+| AGENT-01 | Phase 7 | Completed |
+| AGENT-02 | Phase 7 | Completed |
+| AGENT-03 | Phase 7 | Completed |
+| AGENT-04 | Phase 7 | Completed |
 
 **Coverage:**
-- v1 requirements: 25 total
-- Mapped to phases: 25
+- v1 + active follow-on requirements: 29 total
+- Mapped to phases: 29
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-21*
-*Last updated: 2026-04-22 after completing 06-01 release, CI, and documentation polish*
+*Last updated: 2026-04-27 after completing 07-01 agent-facing discovery*
