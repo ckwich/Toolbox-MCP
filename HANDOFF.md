@@ -75,5 +75,14 @@ The finished milestone intentionally stopped short of:
 - unrestricted execution/runtime sandboxes
 - broader host-specific integrations
 
-If the next milestone starts, the right posture is to plan it as a new deliberate phase,
-not to reopen the completed roadmap ad hoc.
+## Next Planned Session
+
+Phase 9 is planned but not implemented.
+
+- Start here: [.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md](.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md)
+- First slice: `09-01` derived capability flags and quality summaries
+- Second slice: `09-02` lazy guidance-source indexing and composition examples
+
+The right posture is still deliberate and test-first: do not reopen completed Phase 7/8
+discovery work ad hoc, and do not implement speculative tasks/triggers/streaming behavior
+until client and SDK support is proven.

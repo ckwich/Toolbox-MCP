@@ -4,7 +4,8 @@
 
 The main v1 roadmap is complete. This follow-on phase captures the minimum polish needed
 before broader real-world use: durable CI, a clear first-run path, explicit
-state-compatibility notes, and a current operational handoff.
+state-compatibility notes, a current operational handoff, and agent-facing quality
+intelligence for registered toolsets.
 
 ## Phases
 
@@ -20,6 +21,7 @@ state-compatibility notes, and a current operational handoff.
 - [x] **Phase 6: Release and Operability Polish** - Add CI, first-run guidance, compatibility notes, and a current operational handoff
 - [x] **Phase 7: Agent-Facing Discovery** - Make deferred capabilities self-describing enough for agents to know when to ask Toolbox
 - [x] **Phase 8: Agent Guidance Affordances** - Add brief, planning, guidance, and catalog-audit tools so agents can use Toolbox deliberately
+- [ ] **Phase 9: Toolset Quality Intelligence** - Derive capability flags, quality signals, guidance sources, and composition examples for registered toolsets
 
 ## Phase Details
 
@@ -137,6 +139,22 @@ Plans:
 Plans:
 - [x] 08-01: Add passive agent guidance affordances and catalog linting
 
+### Phase 9: Toolset Quality Intelligence
+**Goal**: Help agents and hosts prefer safer, better-described, more composable registered toolsets without activating everything.
+**Depends on**: Phase 8
+**Requirements**: QUAL-01, QUAL-02, QUAL-03, QUAL-04, QUAL-05
+**Success Criteria** (what must be TRUE):
+1. Registered toolset summaries expose compact derived capability flags without raw schemas.
+2. Toolbox can report a quality summary that explains composability, guidance coverage, safety posture, and missing metadata.
+3. Registered toolsets can point to lazy guidance sources without merging large guidance bodies into the default context.
+4. Toolset composition examples can be registered, listed, and loaded deliberately.
+5. Future protocol-shaped fields for tasks, triggers, streaming, and references are represented as inert metadata only.
+**Plans**: 2 plans
+
+Plans:
+- [ ] 09-01: Add derived capability flags and quality summaries
+- [ ] 09-02: Add lazy guidance-source indexing and composition examples
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -149,3 +167,4 @@ Plans:
 | 6. Release and Operability Polish | 1/1 | Completed | 06-01 |
 | 7. Agent-Facing Discovery | 1/1 | Completed | 07-01 |
 | 8. Agent Guidance Affordances | 1/1 | Completed | 08-01 |
+| 9. Toolset Quality Intelligence | 0/2 | Planned | - |

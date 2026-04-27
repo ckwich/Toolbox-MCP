@@ -226,6 +226,12 @@ Use this as a lightweight checklist when building or accepting new MCP servers i
 
 ## Near-term Toolbox Opportunities
 
+The first discovery and guidance opportunities are already covered by Phase 7 and Phase
+8. The remaining useful work has been converted into Phase 9:
+
+- `09-01`: derived capability flags and quality summaries
+- `09-02`: lazy guidance-source indexing and composition examples
+
 ### 1. Registered server discovery tools
 
 Add or improve tools that make all registered servers discoverable without activation.
@@ -239,6 +245,11 @@ Candidate tools:
 
 These should use the state file, cached contracts, metadata, and audit state.
 
+Status: mostly completed by `toolbox_overview`, `search_toolsets`,
+`suggest_toolsets_for_task`, `get_toolset_status`, `inspect_cached_contracts`,
+`describe_mounted_tools`, `toolbox_brief`, and `get_toolset_guide`. Phase 9 should add
+derived `capability_flags` rather than another broad search surface.
+
 ### 2. Guidance indexing
 
 Add a convention for guidance next to a managed registration.
@@ -251,6 +262,9 @@ Possible sources:
 - a server-provided `usage` or `skills` capability
 
 Toolbox should keep the guidance body lazy-loaded.
+
+Status: planned for `09-02`. Phase 8 added compact `recipes`; Phase 9 should add bounded
+lazy guidance sources.
 
 ### 3. Capability scoring
 
@@ -274,6 +288,8 @@ Example:
 
 This gives agents a way to prefer safer, better-described servers.
 
+Status: planned for `09-01`.
+
 ### 4. Composition examples
 
 Let a registered server provide example programs or batches that Toolbox can expose.
@@ -284,6 +300,8 @@ Example surfaces:
 - `load_toolset_example(namespace, example_id)`
 
 This would make `run_tool_program` easier to use reliably.
+
+Status: planned for `09-02`.
 
 ### 5. Prepared future support for tasks/triggers/streaming
 
@@ -296,6 +314,9 @@ Do not build against speculative protocol details yet. Instead, reserve clean me
 
 This keeps Toolbox ready without making the current implementation brittle.
 
+Status: planned as inert metadata only. Do not implement real task, trigger, streaming,
+or reference-result behavior until client and SDK support is proven.
+
 ## What Not To Do Yet
 
 - Do not eagerly activate every registered server at startup.
@@ -305,15 +326,20 @@ This keeps Toolbox ready without making the current implementation brittle.
 - Do not expose raw transport args/env in discovery responses.
 - Do not assume `cwd` is enough for workspace-aware servers; root discovery should be explicit.
 
-## Recommended Next Step
+## Recommended Next Session
 
-For the active Toolbox work on making registered servers discoverable, implement the smallest useful vertical slice:
+Start Phase 9 with `09-01`: derived capability flags and quality summaries.
 
-1. Add a compact registered server summary model.
-2. Add a search/list tool over registered summaries.
-3. Add a detailed describe tool for one namespace.
-4. Include cached contract status and capability flags.
-5. Keep raw contracts and guidance behind explicit follow-up calls.
-6. Add tests with inactive, active, stale, auth-required, and cached-contract cases.
+The smallest useful vertical slice is:
 
-That would turn the transcript's roadmap ideas into a concrete Toolbox feature without betting on future MCP protocol changes too early.
+1. Add compact capability and quality models.
+2. Derive flags from registration metadata, cached contracts, mounted state, health state,
+   auth requirements, and composition readiness.
+3. Expose one explicit quality-inspection tool.
+4. Thread compact quality summaries into existing guidance surfaces only where the payload
+   stays small.
+5. Add tests for inactive, active, stale, auth-required, thin-metadata, and cached-contract
+   cases.
+6. Keep raw contracts, long guidance, and example payloads behind explicit follow-up calls.
+
+Then do `09-02`: lazy guidance-source indexing and composition examples.

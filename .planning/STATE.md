@@ -5,16 +5,16 @@
 See: `.planning/PROJECT.md` (updated 2026-04-22)
 
 **Core value:** Hosts can keep their always-on MCP surface tiny while still invoking the right toolsets on demand in the same thread.
-**Current focus:** Phase 8 agent guidance affordances completed - repo is ready for live Toolbox use and follow-on testing
+**Current focus:** Phase 9 toolset quality intelligence is planned for the next session; implementation has not started
 
 ## Current Position
 
-Phase: 8 of 8 (Agent Guidance Affordances)
-Plan: 1 of 1 in current phase
-Status: Completed
-Last activity: 2026-04-27 - Completed 08-01 brief, activation planning, guides, recipes, and catalog audit
+Phase: 9 of 9 (Toolset Quality Intelligence)
+Plan: 0 of 2 in current phase
+Status: Planned
+Last activity: 2026-04-27 - Planned Phase 9 from the remaining useful MCP server recommendations
 
-Progress: [██████████] 100%
+Progress: [████████░░] 89%
 
 ## Performance Metrics
 
@@ -35,9 +35,10 @@ Progress: [██████████] 100%
 | 6. Release and Operability Polish | 1 | - | - |
 | 7. Agent-Facing Discovery | 1/1 | - | - |
 | 8. Agent Guidance Affordances | 1/1 | - | - |
+| 9. Toolset Quality Intelligence | 0/2 | - | - |
 
 **Recent Trend:**
-- Last 5 plans: 05-01, 05-02, 06-01, 07-01, 08-01
+- Last 5 completed plans: 05-01, 05-02, 06-01, 07-01, 08-01
 - Trend: Stable
 
 ## Accumulated Context
@@ -60,14 +61,16 @@ Recent decisions affecting current work:
 - Program results can now return only explicitly requested variables and mounted-tool summaries, and the repo includes a concrete host-facing composition workflow guide.
 - Agent-facing discovery should add orientation and intent hints without exposing every downstream schema by default.
 - Agent guidance should remain passive: brief, plan, guide, and audit helpers advise the agent but never auto-activate or dump downstream schemas.
+- Toolset quality intelligence should be derived and compact: capability flags, quality summaries, lazy guidance sources, and composition examples should guide agents without widening the default context.
 
 ### Pending Todos
 
-None currently. Future work should start from a new planned milestone or a deferred item.
+- Start `09-01` in a fresh session: derived capability flags and quality summaries.
+- Continue with `09-02` after `09-01` is verified: lazy guidance-source indexing and composition examples.
 
 ### Blockers/Concerns
 
-- The main roadmap and agent guidance follow-on are complete; future work should start from a new milestone instead of reopening ad hoc iteration.
+- Phase 9 is intentionally planned but not implemented. Do not treat the roadmap entry as completed until `09-01` and `09-02` have tests and summaries.
 
 ## Deferred Items
 
@@ -79,5 +82,5 @@ None currently. Future work should start from a new planned milestone or a defer
 ## Session Continuity
 
 Last session: 2026-04-22 00:00
-Stopped at: Completed Phase 6 release/operability polish after the full v1 roadmap
-Resume file: None
+Stopped at: Planned Phase 9 toolset quality intelligence after Phase 8 completion
+Resume file: `.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md`

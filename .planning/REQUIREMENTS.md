@@ -83,6 +83,17 @@ Current phase note:
 Current phase note:
 - `08-01` delivered `toolbox_brief`, `plan_toolset_activation`, `get_toolset_guide`, `audit_toolbox_catalog`, recipe metadata, stopword-aware discovery terms, MCP exposure, docs, and service/server regression tests
 
+### Toolset Quality Intelligence
+
+- [ ] **QUAL-01**: Registered toolset summaries expose derived capability flags such as cached contract availability, guidance presence, structured-output coverage, auth requirement, workspace-root requirement, and composition support
+- [ ] **QUAL-02**: Toolbox exposes compact quality summaries that explain why an agent should prefer, inspect, refresh, or avoid a registered toolset
+- [ ] **QUAL-03**: Toolset registrations can point to lazy guidance sources without loading full guidance bodies into default discovery results
+- [ ] **QUAL-04**: Toolset registrations can expose composition examples that are listed compactly and loaded explicitly by example id
+- [ ] **QUAL-05**: Toolbox can reserve future protocol-shaped metadata for tasks, triggers, streaming, and references without implementing speculative behavior
+
+Current phase note:
+- `09-01` and `09-02` are planned from `MCP_SERVER_RECOMMENDATIONS.md`; no Phase 9 implementation has started yet
+
 ## v2 Requirements
 
 ### Transports
@@ -140,12 +151,17 @@ Current phase note:
 | GUIDE-02 | Phase 8 | Completed |
 | GUIDE-03 | Phase 8 | Completed |
 | GUIDE-04 | Phase 8 | Completed |
+| QUAL-01 | Phase 9 | Planned |
+| QUAL-02 | Phase 9 | Planned |
+| QUAL-03 | Phase 9 | Planned |
+| QUAL-04 | Phase 9 | Planned |
+| QUAL-05 | Phase 9 | Planned |
 
 **Coverage:**
-- v1 + active follow-on requirements: 33 total
-- Mapped to phases: 33
+- v1 + active follow-on requirements: 38 total
+- Mapped to phases: 38
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-21*
-*Last updated: 2026-04-27 after completing 08-01 agent guidance affordances*
+*Last updated: 2026-04-27 after planning Phase 9 toolset quality intelligence*

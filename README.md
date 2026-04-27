@@ -347,4 +347,5 @@ echoing the full initial context or reloading the full mounted inventory.
 - [docs/quickstart.md](docs/quickstart.md): fastest end-to-end local trial
 - [docs/composition-workflows.md](docs/composition-workflows.md): progressive discovery, batch, and scripted composition examples
 - [MCP_SERVER_RECOMMENDATIONS.md](MCP_SERVER_RECOMMENDATIONS.md): transcript-derived MCP server quality notes and Toolbox implementation status
+- [.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md](.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md): planned next session for capability flags, quality scoring, lazy guidance, and examples
 - [HANDOFF.md](HANDOFF.md): current operator/developer handoff

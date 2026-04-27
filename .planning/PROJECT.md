@@ -33,8 +33,8 @@ Hosts can keep their always-on MCP surface tiny while still invoking the right t
 
 ### Active
 
-No active roadmap items remain. Future work should start as a new planned milestone or
-come from the deferred list intentionally.
+- Phase 9 is planned as the next milestone: derived capability flags, quality summaries,
+  lazy guidance-source indexing, composition examples, and inert future protocol metadata.
 
 ### Out of Scope
 
@@ -48,6 +48,7 @@ come from the deferred list intentionally.
 - `spec.med` is the current product specification and remains the main source of truth for supervisor behavior, error handling, activation semantics, and refresh guarantees.
 - The current repo already proves the end-to-end core loop: registration, activation, refresh, deactivation, live tool brokering, batch composition, scripted composition, and recent harness hardening.
 - The next work after v1 should prioritize production-readiness and operator clarity before widening the product surface indiscriminately.
+- The next planned session should make registered toolsets easier for agents to rank and trust without activating them or loading raw downstream schemas.
 
 ## Constraints
 
@@ -82,6 +83,8 @@ come from the deferred list intentionally.
 | CI must keep both the general lane and the strict Windows unraisable-warning lane | The repo has platform-sensitive subprocess behavior, so “passes on one machine” is not strong enough release evidence | ✓ Good |
 | Toolbox needs an agent orientation layer in addition to raw search | Hidden capabilities are only useful if the agent can cheaply learn that categories such as skills, docs, or security scanning exist | ✓ Good |
 | Agent guidance should be passive and plan-first | The agent should get enough help to choose and mount the right toolset, but Toolbox should not widen the visible surface or activate tools on its behalf | ✓ Good |
+| Toolset quality should be derived, compact, and explainable | Agents need to know which registered toolsets are composable, guidance-backed, healthy, and safe to prefer without loading full schemas | Planned |
+| Future MCP roadmap concepts should remain inert metadata until verified | Tasks, triggers, streaming, and reference results are useful concepts, but implementing behavior before client and SDK support is stable would make Toolbox brittle | Planned |
 
 ## Evolution
 
@@ -100,4 +103,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Refresh Context with new product and codebase reality.
 
 ---
-*Last updated: 2026-04-27 after completing Phase 8 agent guidance affordances*
+*Last updated: 2026-04-27 after planning Phase 9 toolset quality intelligence*
