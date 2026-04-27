@@ -22,6 +22,7 @@ dev = [
 [project.scripts]
 toolbox-mcp = "toolbox.server:main"
 toolbox-fake-mcp = "toolbox.fake_managed_server:main"
+toolbox-skills-mcp = "toolbox.skills_server:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

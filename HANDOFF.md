@@ -15,6 +15,7 @@ Today the repo includes:
 - batch and constrained scripted composition
 - recent audit history and recent-failure summaries
 - protected transport-secret persistence and plaintext-state migration
+- a separate read-only Codex skill-loader MCP for listing, loading, searching, and validating `SKILL.md` files
 - cross-platform CI for the main verification lanes
 
 ## First Run
@@ -35,6 +36,7 @@ Today the repo includes:
 - Main repo overview: [README.md](README.md)
 - Fast local trial: [docs/quickstart.md](docs/quickstart.md)
 - Host composition patterns: [docs/composition-workflows.md](docs/composition-workflows.md)
+- Codex skill-loader MCP registration: [docs/skill-loader-mcp.md](docs/skill-loader-mcp.md)
 - Planning spine: [.planning/PROJECT.md](.planning/PROJECT.md)
 
 ## Verification Standard
@@ -42,6 +44,7 @@ Today the repo includes:
 The current local verification bar is:
 
 - `python -m pytest -q`
+- `python -m pytest tests\test_skills_loader.py tests\test_skills_server.py tests\test_skills_server_entrypoint.py -q`
 - `python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning`
 - `python -m compileall toolbox tests`
 

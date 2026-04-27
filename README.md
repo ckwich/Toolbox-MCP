@@ -27,6 +27,7 @@ This first implementation focuses on a narrow end-to-end loop:
 - bounded downstream runtime bootstrap, call, and shutdown timeouts
 - structured failure envelopes for batch and program execution
 - schema hashing and diff reporting
+- read-only Codex skill discovery through a separate skill-loader MCP server
 - one fake managed stdio MCP server for integration testing
 
 When a toolset is activated, Toolbox mounts its downstream tools into the active tool
@@ -88,6 +89,7 @@ program limits and transport timeout settings so hosts can shape batches and scr
 programs intentionally before they submit them.
 
 For complete host-facing examples, see [docs/composition-workflows.md](docs/composition-workflows.md).
+For the optional Codex skill-loader MCP, see [docs/skill-loader-mcp.md](docs/skill-loader-mcp.md).
 
 ## Scope
 
@@ -169,7 +171,8 @@ toolbox/
 │       └── ci.yml
 ├── docs/
 │   ├── composition-workflows.md
-│   └── quickstart.md
+│   ├── quickstart.md
+│   └── skill-loader-mcp.md
 ├── toolbox/
 │   ├── config.py
 │   ├── fake_managed_server.py
@@ -179,6 +182,8 @@ toolbox/
 │   ├── scope_manager.py
 │   ├── server.py
 │   ├── service.py
+│   ├── skills_loader.py
+│   ├── skills_server.py
 │   ├── stdio_transport.py
 │   ├── transport_manager.py
 │   ├── transport_secrets.py
@@ -199,6 +204,12 @@ python -m toolbox.server
 Toolbox stores its local state in `.toolbox/state.json` by default and seeds a fake managed
 toolset manifest in `.toolbox/fake_toolset_manifest.json`.
 
+The skill-loader MCP can be run separately:
+
+```powershell
+python -m toolbox.skills_server
+```
+
 ## Quickstart
 
 The shortest local proof-of-life path is:
@@ -211,6 +222,8 @@ The shortest local proof-of-life path is:
 6. Call `deactivate_toolsets` when you are done.
 
 For a concrete end-to-end example payload sequence, see [docs/quickstart.md](docs/quickstart.md).
+For direct Codex and Toolbox-managed skill-loader registration examples, see
+[docs/skill-loader-mcp.md](docs/skill-loader-mcp.md).
 
 ## Development
 
