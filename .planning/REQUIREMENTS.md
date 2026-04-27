@@ -73,6 +73,16 @@ Current phase note:
 Current phase note:
 - `07-01` delivered `toolbox_overview`, `suggest_toolsets_for_task`, richer registration metadata, metadata-aware search, MCP exposure, docs, and service/server regression tests
 
+### Agent Guidance
+
+- [x] **GUIDE-01**: Agent can ask for a compact Toolbox brief with recommended flow, active toolsets, task-specific suggestions, and next actions
+- [x] **GUIDE-02**: Agent can dry-run activation choices for a task and scope before mounting deferred toolsets
+- [x] **GUIDE-03**: Toolset registrations can carry compact recipes, and agents can load one selected toolset guide lazily
+- [x] **GUIDE-04**: Maintainers can audit registered toolsets for missing agent-facing metadata that would weaken discovery or usage
+
+Current phase note:
+- `08-01` delivered `toolbox_brief`, `plan_toolset_activation`, `get_toolset_guide`, `audit_toolbox_catalog`, recipe metadata, stopword-aware discovery terms, MCP exposure, docs, and service/server regression tests
+
 ## v2 Requirements
 
 ### Transports
@@ -126,12 +136,16 @@ Current phase note:
 | AGENT-02 | Phase 7 | Completed |
 | AGENT-03 | Phase 7 | Completed |
 | AGENT-04 | Phase 7 | Completed |
+| GUIDE-01 | Phase 8 | Completed |
+| GUIDE-02 | Phase 8 | Completed |
+| GUIDE-03 | Phase 8 | Completed |
+| GUIDE-04 | Phase 8 | Completed |
 
 **Coverage:**
-- v1 + active follow-on requirements: 29 total
-- Mapped to phases: 29
+- v1 + active follow-on requirements: 33 total
+- Mapped to phases: 33
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-21*
-*Last updated: 2026-04-27 after completing 07-01 agent-facing discovery*
+*Last updated: 2026-04-27 after completing 08-01 agent guidance affordances*

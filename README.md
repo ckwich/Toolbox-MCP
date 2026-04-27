@@ -12,7 +12,8 @@ This first implementation focuses on a narrow end-to-end loop:
 - JSON-backed registry and schema cache
 - metadata-first discovery tools
 - control-plane registration management via `register_toolset` and `unregister_toolsets`
-- agent-facing discovery via `toolbox_overview` and `suggest_toolsets_for_task`
+- agent-facing discovery via `toolbox_brief`, `toolbox_overview`, `suggest_toolsets_for_task`,
+  `plan_toolset_activation`, `get_toolset_guide`, and `audit_toolbox_catalog`
 - scoped activation, live mounting, refresh, and deactivation
 - bounded lifecycle audit logging with control-plane querying
 - cached and mounted contract inspection with compact schema summaries
@@ -42,16 +43,34 @@ so hosts do not need to pre-seed every registration directly in the state file.
 registered toolsets by category and returns compact examples, hints, and toolset
 summaries without activating anything or loading downstream schemas.
 
+`toolbox_brief` is the cheapest first question for an agent to ask. It returns the
+recommended Toolbox flow, currently active toolsets, task-specific suggestions when a
+task is provided, and next-action hints without mounting anything.
+
 `suggest_toolsets_for_task` turns a task description into a short ranked list of
 registered toolsets. It searches namespace, title, description, category, tags, aliases,
-examples, and activation hints, which lets an agent find a hidden skill loader or scanner
-by intent instead of by exact toolset name.
+examples, recipes, and activation hints, which lets an agent find a hidden skill loader
+or scanner by intent instead of by exact toolset name.
+
+`plan_toolset_activation` turns that shortlist into a dry-run activation plan. It tells
+the agent which namespaces would be newly mounted for the requested scope, which are
+already loaded, which should be skipped, and which follow-up inspection tool to call
+before invoking downstream capabilities.
+
+`get_toolset_guide` lazily loads compact per-toolset usage guidance after a candidate has
+been selected. It returns recipes, examples, when-to-use hints, and safe next actions
+without dumping raw downstream schemas.
+
+`audit_toolbox_catalog` checks registered toolsets for thin metadata that would make them
+hard for agents to discover or use. It is intended for improving the catalog itself, not
+for normal task execution.
 
 Toolset registrations now support agent-facing metadata fields:
 
 - `category`: coarse capability bucket such as `skills`, `docs`, `security`, or `automation`
 - `aliases`: alternate names or phrases an agent might use
 - `examples`: short tasks that should make the agent consider the toolset
+- `recipes`: compact workflow hints for using the toolset correctly after selection
 - `activation_hint`: when to activate the toolset
 - `cost_hint`, `latency_hint`, and `trust_hint`: compact planning signals for choosing among candidates
 
@@ -235,9 +254,10 @@ The shortest local proof-of-life path is:
 1. Install the package and dev dependencies with `python -m pip install -e ".[dev]"`.
 2. Run `python -m pytest -q` once.
 3. Start Toolbox with `python -m toolbox.server`.
-4. In your MCP host, call `search_toolsets`, then `activate_toolsets` for `fake_stdio`.
-5. Call `describe_mounted_tools`, then `run_tool_program` or `run_tool_batch`.
-6. Call `deactivate_toolsets` when you are done.
+4. In your MCP host, call `toolbox_brief`, then `plan_toolset_activation` or `search_toolsets`.
+5. Activate the chosen namespace such as `fake_stdio`.
+6. Call `describe_mounted_tools`, then `run_tool_program` or `run_tool_batch`.
+7. Call `deactivate_toolsets` when you are done.
 
 For a concrete end-to-end example payload sequence, see [docs/quickstart.md](docs/quickstart.md).
 For direct Codex and Toolbox-managed skill-loader registration examples, see
@@ -293,8 +313,12 @@ or downstream transport exits.
 
 The current agent-facing discovery surface is:
 
+- `toolbox_brief`: get a compact recommended flow, active-toolset snapshot, and next actions
 - `toolbox_overview`: see registered deferred capability categories and small examples
 - `suggest_toolsets_for_task`: get a ranked shortlist of toolsets for a task description
+- `plan_toolset_activation`: dry-run which toolsets should be mounted for a task and scope
+- `get_toolset_guide`: load compact recipes and next actions for one selected toolset
+- `audit_toolbox_catalog`: identify registrations with thin agent-facing metadata
 - `search_toolsets`: search registered toolsets by metadata and agent-facing hints
 
 The current contract inspection surface is:
@@ -322,4 +346,5 @@ echoing the full initial context or reloading the full mounted inventory.
 
 - [docs/quickstart.md](docs/quickstart.md): fastest end-to-end local trial
 - [docs/composition-workflows.md](docs/composition-workflows.md): progressive discovery, batch, and scripted composition examples
+- [MCP_SERVER_RECOMMENDATIONS.md](MCP_SERVER_RECOMMENDATIONS.md): transcript-derived MCP server quality notes and Toolbox implementation status
 - [HANDOFF.md](HANDOFF.md): current operator/developer handoff

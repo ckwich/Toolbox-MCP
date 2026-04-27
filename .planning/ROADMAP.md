@@ -19,6 +19,7 @@ state-compatibility notes, and a current operational handoff.
 - [x] **Phase 5: Composition UX and Runtime Tuning** - Improve discovery and programmatic composition ergonomics on top of the hardened harness
 - [x] **Phase 6: Release and Operability Polish** - Add CI, first-run guidance, compatibility notes, and a current operational handoff
 - [x] **Phase 7: Agent-Facing Discovery** - Make deferred capabilities self-describing enough for agents to know when to ask Toolbox
+- [x] **Phase 8: Agent Guidance Affordances** - Add brief, planning, guidance, and catalog-audit tools so agents can use Toolbox deliberately
 
 ## Phase Details
 
@@ -122,6 +123,20 @@ Plans:
 Plans:
 - [x] 07-01: Add overview, rich metadata, and task-based toolset suggestions
 
+### Phase 8: Agent Guidance Affordances
+**Goal**: Give agents a compact, passive operating path from orientation to activation without relying on hidden chat context.
+**Depends on**: Phase 7
+**Requirements**: GUIDE-01, GUIDE-02, GUIDE-03, GUIDE-04
+**Success Criteria** (what must be TRUE):
+1. Agents can ask one low-token brief for the recommended Toolbox flow, active toolsets, and task-specific next actions.
+2. Agents can dry-run activation choices before mounting deferred toolsets.
+3. Toolsets can carry compact recipes and expose them lazily through a per-toolset guide.
+4. Maintainers can audit registrations for missing agent-facing metadata before the catalog drifts.
+**Plans**: 1 plan
+
+Plans:
+- [x] 08-01: Add passive agent guidance affordances and catalog linting
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -133,3 +148,4 @@ Plans:
 | 5. Composition UX and Runtime Tuning | 2/2 | Completed | 05-01, 05-02 |
 | 6. Release and Operability Polish | 1/1 | Completed | 06-01 |
 | 7. Agent-Facing Discovery | 1/1 | Completed | 07-01 |
+| 8. Agent Guidance Affordances | 1/1 | Completed | 08-01 |

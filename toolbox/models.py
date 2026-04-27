@@ -94,6 +94,7 @@ class ToolsetRecord(BaseModel):
     category: str = "general"
     aliases: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
+    recipes: list[str] = Field(default_factory=list)
     activation_hint: str | None = None
     cost_hint: str | None = None
     latency_hint: str | None = None
@@ -360,6 +361,7 @@ class SearchResult(BaseModel):
     tags: list[str]
     aliases: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
+    recipes: list[str] = Field(default_factory=list)
     activation_hint: str | None = None
     cost_hint: str | None = None
     latency_hint: str | None = None
@@ -377,6 +379,7 @@ class ToolsetSummary(BaseModel):
     tags: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
+    recipes: list[str] = Field(default_factory=list)
     activation_hint: str | None = None
     cost_hint: str | None = None
     latency_hint: str | None = None
@@ -416,6 +419,7 @@ class ToolsetSuggestion(BaseModel):
     tags: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
+    recipes: list[str] = Field(default_factory=list)
     activation_hint: str | None = None
     cost_hint: str | None = None
     latency_hint: str | None = None
@@ -432,6 +436,58 @@ class ToolsetSuggestionResult(BaseModel):
     count: int
     suggestions: list[ToolsetSuggestion] = Field(default_factory=list)
     searched_fields: list[str] = Field(default_factory=list)
+
+
+class ToolboxBrief(BaseModel):
+    task: str | None = None
+    purpose: str
+    recommended_flow: list[dict[str, str]] = Field(default_factory=list)
+    next_actions: list[dict[str, Any]] = Field(default_factory=list)
+    active_toolsets: list[ToolsetSummary] = Field(default_factory=list)
+    suggestions: list[ToolsetSuggestion] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ToolsetActivationPlanStep(BaseModel):
+    action: str
+    namespaces: list[str] = Field(default_factory=list)
+    scope: Scope | None = None
+    reason: str
+    tool: str | None = None
+
+
+class ToolsetActivationPlan(BaseModel):
+    task: str
+    scope: Scope
+    selected_namespaces: list[str] = Field(default_factory=list)
+    already_loaded: list[str] = Field(default_factory=list)
+    skipped: list[dict[str, str]] = Field(default_factory=list)
+    steps: list[ToolsetActivationPlanStep] = Field(default_factory=list)
+    suggestions: list[ToolsetSuggestion] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ToolsetGuide(BaseModel):
+    toolset: ToolsetSummary
+    when_to_use: list[str] = Field(default_factory=list)
+    recipes: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    next_actions: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ToolboxCatalogIssue(BaseModel):
+    namespace: str
+    severity: Literal["info", "warning"]
+    missing_fields: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
+class ToolboxCatalogAudit(BaseModel):
+    toolset_count: int
+    issue_count: int
+    issues: list[ToolboxCatalogIssue] = Field(default_factory=list)
+    checked_fields: list[str] = Field(default_factory=list)
 
 
 class ActivationResult(BaseModel):

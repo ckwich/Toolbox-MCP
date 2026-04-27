@@ -140,6 +140,7 @@ async def test_agent_metadata_overview_search_and_suggestions_find_skill_loader(
                 "Need a task-specific skill before specialized work.",
                 "Find available procedural guidance.",
             ],
+            recipes=["Search for a matching skill, then load only that skill before acting."],
             activation_hint="Activate when the task calls for a skill, procedure, or specialized workflow.",
             cost_hint="low",
             latency_hint="low",
@@ -160,16 +161,25 @@ async def test_agent_metadata_overview_search_and_suggestions_find_skill_loader(
         assert "aliases" in search["results"][0]["reasons"][0] or any(
             "aliases" in reason for reason in search["results"][0]["reasons"]
         )
+        assert search["results"][0]["recipes"] == [
+            "Search for a matching skill, then load only that skill before acting."
+        ]
 
         suggestions = service.suggest_toolsets_for_task("I need a task-specific skill for this workflow")
         assert suggestions["error"] is None
         assert suggestions["suggestions"][0]["namespace"] == "skills_loader"
         assert suggestions["suggestions"][0]["category"] == "skills"
+        assert suggestions["suggestions"][0]["recipes"] == [
+            "Search for a matching skill, then load only that skill before acting."
+        ]
 
         status = service.get_toolset_status(["skills_loader"])
         registration_status = status["toolsets"][0]["registration"]
         assert registration_status["trust_hint"] == "local"
         assert registration_status["cost_hint"] == "low"
+        assert registration_status["recipes"] == [
+            "Search for a matching skill, then load only that skill before acting."
+        ]
 
         listing = service.list_toolsets()
         listed = next(item for item in listing["toolsets"] if item["namespace"] == "skills_loader")
@@ -178,6 +188,84 @@ async def test_agent_metadata_overview_search_and_suggestions_find_skill_loader(
             "Need a task-specific skill before specialized work.",
             "Find available procedural guidance.",
         ]
+        assert listed["recipes"] == [
+            "Search for a matching skill, then load only that skill before acting."
+        ]
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_agent_guidance_surfaces_brief_plan_guide_and_catalog_audit(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+
+    try:
+        docs_registration = await service.register_toolset(
+            namespace="docs_helper",
+            title="Documentation Helper",
+            description="Search project documentation and summarize relevant guidance.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server"],
+                "cwd": str(tmp_path),
+            },
+            tags=["docs", "search", "summaries"],
+            category="Docs",
+            aliases=["documentation search", "project docs"],
+            examples=["Find the release checklist before packaging."],
+            recipes=["Search docs first, then load only the files needed for the current task."],
+            activation_hint="Activate when the task asks for repo-local documentation or project guidance.",
+            cost_hint="low",
+            latency_hint="low",
+            trust_hint="local",
+        )
+        assert docs_registration["error"] is None
+
+        thin_registration = await service.register_toolset(
+            namespace="thin_tool",
+            title="Thin Tool",
+            description="A deliberately under-described toolset.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server"],
+                "cwd": str(tmp_path),
+            },
+        )
+        assert thin_registration["error"] is None
+
+        brief = service.toolbox_brief(task="Find documentation for the release checklist")
+        assert brief["error"] is None
+        assert brief["task"] == "Find documentation for the release checklist"
+        assert brief["recommended_flow"][0]["tool"] == "toolbox_brief"
+        assert brief["suggestions"][0]["namespace"] == "docs_helper"
+        assert "plan_toolset_activation" in {item["tool"] for item in brief["next_actions"]}
+
+        plan = service.plan_toolset_activation(
+            task="Find documentation for the release checklist",
+            scope="thread",
+        )
+        assert plan["error"] is None
+        assert plan["selected_namespaces"] == ["docs_helper"]
+        assert plan["steps"][0]["action"] == "activate_toolsets"
+        assert plan["steps"][0]["namespaces"] == ["docs_helper"]
+        assert plan["steps"][1]["action"] == "inspect_mounted_contracts"
+
+        guide = service.get_toolset_guide("docs_helper")
+        assert guide["error"] is None
+        assert guide["toolset"]["namespace"] == "docs_helper"
+        assert guide["recipes"] == [
+            "Search docs first, then load only the files needed for the current task."
+        ]
+        assert guide["next_actions"][0]["tool"] == "activate_toolsets"
+
+        audit = service.audit_toolbox_catalog()
+        assert audit["error"] is None
+        by_namespace = {issue["namespace"]: issue for issue in audit["issues"]}
+        assert "docs_helper" not in by_namespace
+        assert by_namespace["thin_tool"]["severity"] == "warning"
+        assert "activation_hint" in by_namespace["thin_tool"]["missing_fields"]
     finally:
         await service.shutdown()
 
@@ -2268,6 +2356,10 @@ async def test_server_exposes_agent_facing_overview_and_suggestions(tmp_path: Pa
             initial_tool_names = {tool.name for tool in initial_tools.tools}
             assert "toolbox_overview" in initial_tool_names
             assert "suggest_toolsets_for_task" in initial_tool_names
+            assert "toolbox_brief" in initial_tool_names
+            assert "plan_toolset_activation" in initial_tool_names
+            assert "get_toolset_guide" in initial_tool_names
+            assert "audit_toolbox_catalog" in initial_tool_names
 
             registration = await client.call_tool(
                 "register_toolset",
@@ -2285,6 +2377,7 @@ async def test_server_exposes_agent_facing_overview_and_suggestions(tmp_path: Pa
                     "category": "skills",
                     "aliases": ["skill loader", "procedural guidance"],
                     "examples": ["Need a task-specific skill before specialized work."],
+                    "recipes": ["Load the skill first, then follow its procedural guidance."],
                     "activation_hint": "Activate when the task needs a skill or procedural workflow.",
                     "cost_hint": "low",
                     "latency_hint": "low",
@@ -2309,6 +2402,34 @@ async def test_server_exposes_agent_facing_overview_and_suggestions(tmp_path: Pa
             assert suggestions_payload["error"] is None
             assert suggestions_payload["suggestions"][0]["namespace"] == "skills_loader"
             assert suggestions_payload["suggestions"][0]["activation_hint"].startswith("Activate when")
+
+            brief = await client.call_tool(
+                "toolbox_brief",
+                {"task": "Load the right task-specific skill for this workflow."},
+            )
+            brief_payload = parse_result_payload(brief)
+            assert brief_payload["error"] is None
+            assert brief_payload["suggestions"][0]["namespace"] == "skills_loader"
+
+            plan = await client.call_tool(
+                "plan_toolset_activation",
+                {"task": "Load the right task-specific skill for this workflow."},
+            )
+            plan_payload = parse_result_payload(plan)
+            assert plan_payload["error"] is None
+            assert plan_payload["selected_namespaces"] == ["skills_loader"]
+
+            guide = await client.call_tool("get_toolset_guide", {"namespace": "skills_loader"})
+            guide_payload = parse_result_payload(guide)
+            assert guide_payload["error"] is None
+            assert guide_payload["recipes"] == [
+                "Load the skill first, then follow its procedural guidance."
+            ]
+
+            catalog = await client.call_tool("audit_toolbox_catalog", {})
+            catalog_payload = parse_result_payload(catalog)
+            assert catalog_payload["error"] is None
+            assert "skills_loader" not in {issue["namespace"] for issue in catalog_payload["issues"]}
     finally:
         await shutdown_server(server)
         del server

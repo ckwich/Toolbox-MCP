@@ -13,6 +13,7 @@ Today the repo includes:
 - scoped activation semantics across `thread`, `session`, and `global`
 - bounded health checks, recovery flows, and stale-state reconciliation
 - batch and constrained scripted composition
+- agent-facing brief, activation planning, per-toolset guides, recipes, and catalog audit tooling
 - recent audit history and recent-failure summaries
 - protected transport-secret persistence and plaintext-state migration
 - a separate read-only Codex skill-loader MCP for listing, loading, searching, and validating `SKILL.md` files
@@ -28,7 +29,8 @@ Today the repo includes:
    `python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning`
 4. Start Toolbox:
    `python -m toolbox.server`
-5. Follow [docs/quickstart.md](docs/quickstart.md) to exercise the seeded `fake_stdio` toolset.
+5. In your MCP host, call `toolbox_brief` first to orient, then follow
+   [docs/quickstart.md](docs/quickstart.md) to exercise the seeded `fake_stdio` toolset.
 
 ## Key Docs
 

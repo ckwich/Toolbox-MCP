@@ -27,6 +27,7 @@ Hosts can keep their always-on MCP surface tiny while still invoking the right t
 - ✓ The repo now has cross-platform CI coverage for the verified runtime surface, including the strict Windows unraisable-warning lane — Phase 6 / 06-01
 - ✓ Top-level docs now include a first-run quickstart, state-compatibility notes, and a current operational handoff — Phase 6 / 06-01
 - ✓ Agents can now ask for a compact Toolbox overview and task-ranked toolset suggestions backed by richer registration metadata — Phase 7 / 07-01
+- ✓ Agents can now ask for a low-token brief, dry-run activation plan, selected toolset guide, and catalog audit without auto-activating hidden tools — Phase 8 / 08-01
 - ✓ Toolbox supports single-request batch composition and constrained scripted composition over mounted tools — existing
 - ✓ Harness behavior is bounded and structured: lifecycle serialization, runtime timeouts, and stable failure envelopes are already in place — existing
 
@@ -80,6 +81,7 @@ come from the deferred list intentionally.
 | Post-v1 polish should improve verification and operator clarity instead of adding more product surface | The runtime and control-plane behavior are already feature-complete for the current milestone; the bigger risk is drift or onboarding friction | ✓ Good |
 | CI must keep both the general lane and the strict Windows unraisable-warning lane | The repo has platform-sensitive subprocess behavior, so “passes on one machine” is not strong enough release evidence | ✓ Good |
 | Toolbox needs an agent orientation layer in addition to raw search | Hidden capabilities are only useful if the agent can cheaply learn that categories such as skills, docs, or security scanning exist | ✓ Good |
+| Agent guidance should be passive and plan-first | The agent should get enough help to choose and mount the right toolset, but Toolbox should not widen the visible surface or activate tools on its behalf | ✓ Good |
 
 ## Evolution
 
@@ -98,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Refresh Context with new product and codebase reality.
 
 ---
-*Last updated: 2026-04-27 after completing Phase 7 agent-facing discovery*
+*Last updated: 2026-04-27 after completing Phase 8 agent guidance affordances*

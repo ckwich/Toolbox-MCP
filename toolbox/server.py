@@ -29,7 +29,8 @@ class ToolboxServer(FastMCP):
             instructions=(
                 "Toolbox is a control-plane MCP that lets hosts search, activate, refresh, "
                 "inspect, and deactivate managed toolsets without eagerly loading all schemas. "
-                "Call toolbox_overview or suggest_toolsets_for_task when a task may need hidden capabilities."
+                "Call toolbox_brief first for low-token orientation, or suggest_toolsets_for_task "
+                "when a task may need hidden capabilities."
             ),
             lifespan=lifespan,
         )
@@ -81,6 +82,23 @@ def create_server(
 
     @server.tool(
         description=(
+            "Get a compact agent-facing brief for using Toolbox: current active toolsets, "
+            "task-specific suggestions, recommended flow, and next action hints."
+        )
+    )
+    def toolbox_brief(
+        task: str | None = None,
+        max_suggestions: int = 3,
+        max_active: int = 5,
+    ) -> dict[str, object]:
+        return service.toolbox_brief(
+            task=task,
+            max_suggestions=max_suggestions,
+            max_active=max_active,
+        )
+
+    @server.tool(
+        description=(
             "Search registered deferred toolsets by namespace, title, description, category, tags, aliases, examples, "
             "and activation hints without loading full downstream schemas."
         )
@@ -104,6 +122,43 @@ def create_server(
             limit=limit,
             include_inactive=include_inactive,
         )
+
+    @server.tool(
+        description=(
+            "Create a dry-run activation plan for a task before mounting deferred toolsets. "
+            "Use this to keep activation deliberate, scoped, and explainable."
+        )
+    )
+    def plan_toolset_activation(
+        task: str,
+        limit: int = 3,
+        scope: str = "thread",
+        include_inactive: bool = True,
+    ) -> dict[str, object]:
+        return service.plan_toolset_activation(
+            task=task,
+            limit=limit,
+            scope=scope,
+            include_inactive=include_inactive,
+        )
+
+    @server.tool(
+        description=(
+            "Load compact usage guidance, recipes, examples, and next actions for one registered toolset "
+            "without mounting it."
+        )
+    )
+    def get_toolset_guide(namespace: str) -> dict[str, object]:
+        return service.get_toolset_guide(namespace=namespace)
+
+    @server.tool(
+        description=(
+            "Audit registered toolset metadata for missing agent-facing guidance fields. "
+            "Use this when improving the catalog itself."
+        )
+    )
+    def audit_toolbox_catalog() -> dict[str, object]:
+        return service.audit_toolbox_catalog()
 
     @server.tool(description="List registered toolsets and their current status.")
     def list_toolsets(scope: str | None = None) -> dict[str, object]:
@@ -201,6 +256,7 @@ def create_server(
         category: str = "general",
         aliases: list[str] | None = None,
         examples: list[str] | None = None,
+        recipes: list[str] | None = None,
         activation_hint: str | None = None,
         cost_hint: str | None = None,
         latency_hint: str | None = None,
@@ -221,6 +277,7 @@ def create_server(
             category=category,
             aliases=aliases,
             examples=examples,
+            recipes=recipes,
             activation_hint=activation_hint,
             cost_hint=cost_hint,
             latency_hint=latency_hint,

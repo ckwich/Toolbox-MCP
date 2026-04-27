@@ -5,21 +5,21 @@
 See: `.planning/PROJECT.md` (updated 2026-04-22)
 
 **Core value:** Hosts can keep their always-on MCP surface tiny while still invoking the right toolsets on demand in the same thread.
-**Current focus:** Phase 7 agent-facing discovery completed - repo is ready for live Toolbox use and follow-on testing
+**Current focus:** Phase 8 agent guidance affordances completed - repo is ready for live Toolbox use and follow-on testing
 
 ## Current Position
 
-Phase: 7 of 7 (Agent-Facing Discovery)
+Phase: 8 of 8 (Agent Guidance Affordances)
 Plan: 1 of 1 in current phase
 Status: Completed
-Last activity: 2026-04-27 - Completed 07-01 overview, metadata, and task suggestions
+Last activity: 2026-04-27 - Completed 08-01 brief, activation planning, guides, recipes, and catalog audit
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: -
 - Total execution time: 0.0 hours
 
@@ -34,9 +34,10 @@ Progress: [██████████] 100%
 | 5. Composition UX and Runtime Tuning | 2 | - | - |
 | 6. Release and Operability Polish | 1 | - | - |
 | 7. Agent-Facing Discovery | 1/1 | - | - |
+| 8. Agent Guidance Affordances | 1/1 | - | - |
 
 **Recent Trend:**
-- Last 5 plans: 04-02, 05-01, 05-02, 06-01, 07-01
+- Last 5 plans: 05-01, 05-02, 06-01, 07-01, 08-01
 - Trend: Stable
 
 ## Accumulated Context
@@ -58,6 +59,7 @@ Recent decisions affecting current work:
 - Composition prep now has a cheap live tool-description surface and an explicit runtime-budget inspection surface, separate from heavier toolset-level contract inspection.
 - Program results can now return only explicitly requested variables and mounted-tool summaries, and the repo includes a concrete host-facing composition workflow guide.
 - Agent-facing discovery should add orientation and intent hints without exposing every downstream schema by default.
+- Agent guidance should remain passive: brief, plan, guide, and audit helpers advise the agent but never auto-activate or dump downstream schemas.
 
 ### Pending Todos
 
@@ -65,7 +67,7 @@ None currently. Future work should start from a new planned milestone or a defer
 
 ### Blockers/Concerns
 
-- The main roadmap and post-v1 polish phase are complete; future work should start from a new milestone instead of reopening ad hoc iteration.
+- The main roadmap and agent guidance follow-on are complete; future work should start from a new milestone instead of reopening ad hoc iteration.
 
 ## Deferred Items
 

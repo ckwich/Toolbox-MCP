@@ -42,10 +42,16 @@ from toolbox.models import (
     ToolSchema,
     ToolContractDelta,
     ToolContractSummary,
+    ToolboxBrief,
+    ToolboxCatalogAudit,
+    ToolboxCatalogIssue,
     ToolboxCategoryOverview,
     ToolboxOverview,
+    ToolsetActivationPlan,
+    ToolsetActivationPlanStep,
     ToolsetContractDiff,
     ToolsetContractInspection,
+    ToolsetGuide,
     ToolsetRecord,
     ToolsetSuggestion,
     ToolsetSuggestionResult,
@@ -119,6 +125,9 @@ class ToolboxService:
             examples=[
                 "Prove a host can activate and call a managed toolset.",
                 "Smoke-test Toolbox registration and lifecycle behavior.",
+            ],
+            recipes=[
+                "Use toolbox_brief for orientation, activate fake_stdio, call fake_stdio.fake_status, then deactivate when the smoke check is complete.",
             ],
             activation_hint="Activate this when validating Toolbox itself or exercising the fake stdio flow.",
             cost_hint="low",
@@ -245,7 +254,7 @@ class ToolboxService:
         )
 
     def search_toolsets(self, query: str, limit: int = 10, include_inactive: bool = True) -> dict[str, Any]:
-        query_terms = [term for term in query.lower().split() if term]
+        query_terms = self._discovery_terms(query)
         ranked: list[tuple[int, ToolsetRecord, list[str]]] = []
         for record in self._load_all_records():
             if not include_inactive and not record.loaded_scopes:
@@ -264,6 +273,7 @@ class ToolboxService:
                 "tags": record.tags,
                 "aliases": record.aliases,
                 "examples": record.examples[:3],
+                "recipes": record.recipes[:3],
                 "activation_hint": record.activation_hint,
                 "cost_hint": record.cost_hint,
                 "latency_hint": record.latency_hint,
@@ -317,12 +327,28 @@ class ToolboxService:
             ],
             discovery_tools=[
                 {
+                    "name": "toolbox_brief",
+                    "use": "Get the lowest-token orientation, active toolset snapshot, and next action hints for the current task.",
+                },
+                {
                     "name": "search_toolsets",
                     "use": "Find registered toolsets by keyword, category, alias, example, or activation hint.",
                 },
                 {
                     "name": "suggest_toolsets_for_task",
                     "use": "Ask Toolbox for a short ranked list of toolsets relevant to the current task.",
+                },
+                {
+                    "name": "plan_toolset_activation",
+                    "use": "Build a dry-run activation plan before mounting deferred toolsets.",
+                },
+                {
+                    "name": "get_toolset_guide",
+                    "use": "Load compact recipes and operational hints for one selected toolset.",
+                },
+                {
+                    "name": "audit_toolbox_catalog",
+                    "use": "Find thin or under-described registrations that agents may struggle to use.",
                 },
                 {
                     "name": "activate_toolsets",
@@ -343,7 +369,7 @@ class ToolboxService:
         limit: int = 5,
         include_inactive: bool = True,
     ) -> dict[str, Any]:
-        task_terms = [term for term in task.lower().split() if term]
+        task_terms = self._discovery_terms(task)
         if not task_terms:
             return {
                 "task": task,
@@ -373,6 +399,7 @@ class ToolboxService:
                 tags=record.tags,
                 aliases=record.aliases,
                 examples=record.examples[:3],
+                recipes=record.recipes[:3],
                 activation_hint=record.activation_hint,
                 cost_hint=record.cost_hint,
                 latency_hint=record.latency_hint,
@@ -392,6 +419,363 @@ class ToolboxService:
             searched_fields=self._agent_discovery_fields(),
         )
         payload = result.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def toolbox_brief(
+        self,
+        task: str | None = None,
+        max_suggestions: int = 3,
+        max_active: int = 5,
+    ) -> dict[str, Any]:
+        normalized_task = self._clean_optional_text(task)
+        records = sorted(self._load_all_records(), key=lambda item: item.namespace)
+        active_toolsets = [
+            self._toolset_summary(record)
+            for record in records
+            if record.loaded_scopes
+        ][: max(0, max_active)]
+
+        suggestions: list[ToolsetSuggestion] = []
+        warnings: list[str] = []
+        if normalized_task is not None:
+            suggestion_payload = self.suggest_toolsets_for_task(
+                normalized_task,
+                limit=max(0, max_suggestions),
+                include_inactive=True,
+            )
+            if suggestion_payload["error"] is None:
+                suggestions = [
+                    ToolsetSuggestion.model_validate(item)
+                    for item in suggestion_payload["suggestions"]
+                ]
+            else:
+                warnings.append(suggestion_payload["error"]["message"])
+
+        stale_count = sum(1 for record in records if record.stale)
+        if stale_count:
+            warnings.append(f"{stale_count} registered toolset(s) are currently stale.")
+
+        next_actions: list[dict[str, Any]] = [
+            {
+                "tool": "toolbox_overview",
+                "when": "Use when you need the catalog shape by category.",
+            },
+            {
+                "tool": "search_toolsets",
+                "when": "Use when you know keywords but not the right namespace.",
+            },
+        ]
+        if normalized_task is not None:
+            next_actions.insert(
+                0,
+                {
+                    "tool": "plan_toolset_activation",
+                    "when": "Use before activation to keep mounting deliberate and scoped.",
+                    "task": normalized_task,
+                },
+            )
+        else:
+            next_actions.insert(
+                0,
+                {
+                    "tool": "suggest_toolsets_for_task",
+                    "when": "Use when you have a task description and want ranked candidates.",
+                },
+            )
+
+        brief = ToolboxBrief(
+            task=normalized_task,
+            purpose=(
+                "Use Toolbox as a progressive-discovery control plane: orient, search or suggest, "
+                "plan activation, mount only what the task needs, then compose and clean up."
+            ),
+            recommended_flow=[
+                {
+                    "tool": "toolbox_brief",
+                    "use": "Start here for low-token orientation and task-specific next actions.",
+                },
+                {
+                    "tool": "suggest_toolsets_for_task",
+                    "use": "Rank deferred toolsets against the current task.",
+                },
+                {
+                    "tool": "plan_toolset_activation",
+                    "use": "Dry-run which namespaces to activate and why.",
+                },
+                {
+                    "tool": "activate_toolsets",
+                    "use": "Mount only the selected namespaces for the narrowest useful scope.",
+                },
+                {
+                    "tool": "describe_mounted_tools",
+                    "use": "Inspect compact live contracts before composing calls.",
+                },
+                {
+                    "tool": "run_tool_batch or run_tool_program",
+                    "use": "Compose downstream calls in one round trip when multiple calls are needed.",
+                },
+                {
+                    "tool": "deactivate_toolsets",
+                    "use": "Unmount task-specific toolsets when they are no longer needed.",
+                },
+            ],
+            next_actions=next_actions,
+            active_toolsets=active_toolsets,
+            suggestions=suggestions,
+            warnings=warnings,
+        )
+        payload = brief.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def plan_toolset_activation(
+        self,
+        task: str,
+        limit: int = 3,
+        scope: str = "thread",
+        include_inactive: bool = True,
+    ) -> dict[str, Any]:
+        normalized_task = self._clean_optional_text(task)
+        if normalized_task is None:
+            return {
+                "task": task,
+                "scope": scope,
+                "selected_namespaces": [],
+                "already_loaded": [],
+                "skipped": [],
+                "steps": [],
+                "suggestions": [],
+                "warnings": [],
+                "error": self._error("invalid_task", "Task must include at least one search term."),
+            }
+
+        try:
+            scope_value = Scope(scope)
+        except ValueError:
+            return {
+                "task": normalized_task,
+                "scope": scope,
+                "selected_namespaces": [],
+                "already_loaded": [],
+                "skipped": [],
+                "steps": [],
+                "suggestions": [],
+                "warnings": [],
+                "error": self._error("invalid_scope", f"Unsupported scope: {scope}", retryable=False),
+            }
+
+        suggestion_payload = self.suggest_toolsets_for_task(
+            normalized_task,
+            limit=max(0, limit),
+            include_inactive=include_inactive,
+        )
+        if suggestion_payload["error"] is not None:
+            return {
+                "task": normalized_task,
+                "scope": scope_value.value,
+                "selected_namespaces": [],
+                "already_loaded": [],
+                "skipped": [],
+                "steps": [],
+                "suggestions": [],
+                "warnings": [suggestion_payload["error"]["message"]],
+                "error": suggestion_payload["error"],
+            }
+
+        suggestions = [
+            ToolsetSuggestion.model_validate(item)
+            for item in suggestion_payload["suggestions"]
+        ]
+        selected_namespaces: list[str] = []
+        already_loaded: list[str] = []
+        skipped: list[dict[str, str]] = []
+        warnings: list[str] = []
+
+        for suggestion in suggestions:
+            record = self._get_record(suggestion.namespace)
+            if record is None:
+                skipped.append({"namespace": suggestion.namespace, "reason": "registration_missing"})
+                continue
+            if record.stale:
+                skipped.append({"namespace": record.namespace, "reason": "stale"})
+                warnings.append(f"{record.namespace} is stale; refresh or clear stale state before activation.")
+                continue
+            if scope_value in record.loaded_scopes:
+                already_loaded.append(record.namespace)
+                continue
+            selected_namespaces.append(record.namespace)
+
+        steps: list[ToolsetActivationPlanStep] = []
+        if selected_namespaces:
+            steps.append(
+                ToolsetActivationPlanStep(
+                    action="activate_toolsets",
+                    namespaces=selected_namespaces,
+                    scope=scope_value,
+                    reason="Mount the selected deferred toolsets for this task only.",
+                    tool="activate_toolsets",
+                )
+            )
+            steps.append(
+                ToolsetActivationPlanStep(
+                    action="inspect_mounted_contracts",
+                    namespaces=selected_namespaces,
+                    reason="Read compact mounted contracts before calling or composing downstream tools.",
+                    tool="inspect_mounted_contracts",
+                )
+            )
+        if already_loaded:
+            steps.append(
+                ToolsetActivationPlanStep(
+                    action="describe_mounted_tools",
+                    namespaces=already_loaded,
+                    reason="Reuse already-mounted toolsets instead of activating them again.",
+                    tool="describe_mounted_tools",
+                )
+            )
+        if not suggestions:
+            warnings.append("No registered toolsets matched the task.")
+
+        plan = ToolsetActivationPlan(
+            task=normalized_task,
+            scope=scope_value,
+            selected_namespaces=selected_namespaces,
+            already_loaded=already_loaded,
+            skipped=skipped,
+            steps=steps,
+            suggestions=suggestions,
+            warnings=warnings,
+        )
+        payload = plan.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def get_toolset_guide(self, namespace: str) -> dict[str, Any]:
+        record = self._get_record(namespace)
+        if record is None:
+            return {
+                "toolset": None,
+                "when_to_use": [],
+                "recipes": [],
+                "examples": [],
+                "next_actions": [],
+                "warnings": [],
+                "error": self._error(
+                    "unknown_toolset",
+                    f"Unknown toolset: {namespace}",
+                    namespace=namespace,
+                    retryable=False,
+                ),
+            }
+
+        warnings: list[str] = []
+        if record.stale:
+            warnings.append("This toolset is stale; refresh it before relying on mounted contracts.")
+
+        next_actions: list[dict[str, Any]]
+        if record.loaded_scopes:
+            next_actions = [
+                {
+                    "tool": "describe_mounted_tools",
+                    "namespaces": [record.namespace],
+                    "when": "Use now because this toolset is already mounted.",
+                }
+            ]
+        else:
+            next_actions = [
+                {
+                    "tool": "activate_toolsets",
+                    "namespaces": [record.namespace],
+                    "scope": record.default_scope.value,
+                    "when": "Use when this guide confirms the toolset is relevant to the current task.",
+                }
+            ]
+        next_actions.extend(
+            [
+                {
+                    "tool": "inspect_cached_contracts",
+                    "namespaces": [record.namespace],
+                    "when": "Use for compact cached schema summaries before activation.",
+                },
+                {
+                    "tool": "plan_toolset_activation",
+                    "when": "Use with a task string when choosing among multiple candidate toolsets.",
+                },
+            ]
+        )
+
+        guide = ToolsetGuide(
+            toolset=self._toolset_summary(record),
+            when_to_use=self._dedupe_strings(
+                [
+                    record.activation_hint,
+                    *record.examples,
+                    *record.recipes,
+                ]
+            ),
+            recipes=record.recipes,
+            examples=record.examples,
+            next_actions=next_actions,
+            warnings=warnings,
+        )
+        payload = guide.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def audit_toolbox_catalog(self) -> dict[str, Any]:
+        checked_fields = [
+            "category",
+            "aliases",
+            "examples_or_recipes",
+            "activation_hint",
+            "cost_hint",
+            "latency_hint",
+            "trust_hint",
+        ]
+        issues: list[ToolboxCatalogIssue] = []
+        for record in sorted(self._load_all_records(), key=lambda item: item.namespace):
+            missing_fields: list[str] = []
+            suggestions: list[str] = []
+            if record.category == "general":
+                missing_fields.append("category")
+                suggestions.append("Set a domain category so agents can browse related toolsets.")
+            if not record.aliases:
+                missing_fields.append("aliases")
+                suggestions.append("Add aliases that match how agents or humans describe the capability.")
+            if not record.examples and not record.recipes:
+                missing_fields.append("examples_or_recipes")
+                suggestions.append("Add examples or recipes so agents can recognize when to use the toolset.")
+            if record.activation_hint is None:
+                missing_fields.append("activation_hint")
+                suggestions.append("Explain the trigger condition for mounting this toolset.")
+            if record.cost_hint is None:
+                missing_fields.append("cost_hint")
+                suggestions.append("Add a compact cost hint such as low, medium, high, or external-paid.")
+            if record.latency_hint is None:
+                missing_fields.append("latency_hint")
+                suggestions.append("Add a compact latency hint such as low, medium, or high.")
+            if record.trust_hint == "unknown":
+                missing_fields.append("trust_hint")
+                suggestions.append("Describe the trust boundary, for example local, authenticated SaaS, or external.")
+
+            if missing_fields:
+                issues.append(
+                    ToolboxCatalogIssue(
+                        namespace=record.namespace,
+                        severity="warning",
+                        missing_fields=missing_fields,
+                        suggestions=suggestions,
+                    )
+                )
+
+        audit = ToolboxCatalogAudit(
+            toolset_count=len(self._load_all_records()),
+            issue_count=len(issues),
+            issues=issues,
+            checked_fields=checked_fields,
+        )
+        payload = audit.model_dump(mode="json")
         payload["error"] = None
         return payload
 
@@ -420,6 +804,7 @@ class ToolboxService:
                     "tags": record.tags,
                     "aliases": record.aliases,
                     "examples": record.examples[:3],
+                    "recipes": record.recipes[:3],
                     "activation_hint": record.activation_hint,
                     "cost_hint": record.cost_hint,
                     "latency_hint": record.latency_hint,
@@ -1002,6 +1387,7 @@ class ToolboxService:
                         "tags": record.tags,
                         "aliases": record.aliases,
                         "examples": record.examples,
+                        "recipes": record.recipes,
                         "activation_hint": record.activation_hint,
                         "cost_hint": record.cost_hint,
                         "latency_hint": record.latency_hint,
@@ -1069,6 +1455,7 @@ class ToolboxService:
         category: str = "general",
         aliases: list[str] | None = None,
         examples: list[str] | None = None,
+        recipes: list[str] | None = None,
         activation_hint: str | None = None,
         cost_hint: str | None = None,
         latency_hint: str | None = None,
@@ -1144,6 +1531,7 @@ class ToolboxService:
                         "category": self._normalize_category(category),
                         "aliases": self._dedupe_strings(aliases or []),
                         "examples": self._dedupe_strings(examples or []),
+                        "recipes": self._dedupe_strings(recipes or []),
                         "activation_hint": self._clean_optional_text(activation_hint),
                         "cost_hint": self._clean_optional_text(cost_hint),
                         "latency_hint": self._clean_optional_text(latency_hint),
@@ -1198,6 +1586,7 @@ class ToolboxService:
                     "tags": record.tags,
                     "aliases": record.aliases,
                     "examples": record.examples,
+                    "recipes": record.recipes,
                     "activation_hint": record.activation_hint,
                     "cost_hint": record.cost_hint,
                     "latency_hint": record.latency_hint,
@@ -2168,8 +2557,43 @@ class ToolboxService:
             "tags",
             "aliases",
             "examples",
+            "recipes",
             "activation_hint",
         ]
+
+    @staticmethod
+    def _discovery_terms(value: str) -> list[str]:
+        stop_words = {
+            "a",
+            "an",
+            "and",
+            "are",
+            "as",
+            "at",
+            "be",
+            "by",
+            "for",
+            "from",
+            "i",
+            "in",
+            "is",
+            "it",
+            "of",
+            "on",
+            "or",
+            "that",
+            "the",
+            "this",
+            "to",
+            "use",
+            "with",
+            "you",
+        }
+        normalized = "".join(
+            character.lower() if character.isalnum() or character in {"_", "-"} else " "
+            for character in value
+        )
+        return [term for term in normalized.split() if term not in stop_words]
 
     @staticmethod
     def _clean_optional_text(value: str | None) -> str | None:
@@ -2210,6 +2634,7 @@ class ToolboxService:
             tags=record.tags,
             aliases=record.aliases,
             examples=record.examples[:3],
+            recipes=record.recipes[:3],
             activation_hint=record.activation_hint,
             cost_hint=record.cost_hint,
             latency_hint=record.latency_hint,
@@ -2234,6 +2659,7 @@ class ToolboxService:
             ("tags", " ".join(record.tags), 4),
             ("aliases", " ".join(record.aliases), 4),
             ("examples", " ".join(record.examples), 2),
+            ("recipes", " ".join(record.recipes), 3),
         ]
 
         score = 0
