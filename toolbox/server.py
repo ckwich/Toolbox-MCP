@@ -276,7 +276,13 @@ def create_server(
 
 
 def main() -> None:
-    create_server().run("stdio")
+    try:
+        create_server().run("stdio")
+    except KeyboardInterrupt:
+        # Running a stdio MCP server directly in a terminal is a normal local
+        # smoke path. Exit quietly when the user stops it instead of dumping the
+        # AnyIO/MCP cancellation traceback.
+        return
 
 
 if __name__ == "__main__":
