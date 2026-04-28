@@ -24,6 +24,23 @@ def _ordered_unique_scopes(scopes: list[Scope]) -> list[Scope]:
     return sorted(set(scopes), key=lambda item: _SCOPE_ORDER[item])
 
 
+def _dedupe_clean_strings(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        cleaned = value.strip()
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(cleaned)
+    return result
+
+
 class TransportKind(str, Enum):
     STDIO = "stdio"
 
@@ -86,6 +103,110 @@ class ToolSchema(BaseModel):
     tool_hash: str
 
 
+class ToolsetFutureCapabilities(BaseModel):
+    supports_tasks: bool = False
+    supports_triggers: bool = False
+    supports_streaming: bool = False
+    supports_reference_results: bool = False
+
+
+class ToolsetGuidanceSource(BaseModel):
+    kind: Literal["inline", "file", "registered"]
+    title: str
+    summary: str | None = None
+    path: str | None = None
+    content: str | None = None
+
+
+class ToolsetGuidanceSourceSummary(BaseModel):
+    kind: Literal["inline", "file", "registered"]
+    title: str
+    summary: str | None = None
+    path: str | None = None
+
+
+class ToolsetGuidanceDetail(BaseModel):
+    kind: Literal["inline", "file", "registered"]
+    title: str
+    summary: str | None = None
+    path: str | None = None
+    content: str
+
+
+class ToolsetCompositionExample(BaseModel):
+    id: str
+    title: str
+    summary: str | None = None
+    kind: Literal["batch", "program"]
+    tags: list[str] = Field(default_factory=list)
+    required_namespaces: list[str] = Field(default_factory=list)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolsetExampleSummary(BaseModel):
+    id: str
+    title: str
+    summary: str | None = None
+    kind: Literal["batch", "program"]
+    tags: list[str] = Field(default_factory=list)
+    required_namespaces: list[str] = Field(default_factory=list)
+
+
+class ToolsetExampleDetail(ToolsetExampleSummary):
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolsetCapabilityFlags(BaseModel):
+    has_cached_contract: bool = False
+    has_mounted_contract: bool = False
+    has_guidance: bool = False
+    has_recipes: bool = False
+    has_examples: bool = False
+    supports_health_check: bool = True
+    supports_batch_composition: bool = True
+    supports_program_composition: bool = True
+    supports_structured_outputs: bool = False
+    requires_auth: bool = False
+    requires_workspace_root: bool = False
+    has_future_task_metadata: bool = False
+    has_future_trigger_metadata: bool = False
+    has_future_streaming_metadata: bool = False
+    has_future_reference_metadata: bool = False
+
+
+class ToolsetQualitySummary(BaseModel):
+    score: int
+    grade: Literal["excellent", "good", "thin", "risky"]
+    strengths: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    recommended_next_action: Literal["use", "inspect", "refresh", "add_metadata", "avoid_until_fixed"]
+
+
+class ToolsetQualityInspection(BaseModel):
+    namespace: str
+    title: str
+    capability_flags: ToolsetCapabilityFlags
+    quality: ToolsetQualitySummary
+
+
+class ToolsetQualityInspectionResult(BaseModel):
+    count: int
+    quality: list[ToolsetQualityInspection] = Field(default_factory=list)
+    missing: list[ErrorInfo] = Field(default_factory=list)
+
+
+class ToolsetExampleListResult(BaseModel):
+    namespace: str
+    count: int
+    examples: list[ToolsetExampleSummary] = Field(default_factory=list)
+
+
+class ToolsetGuidanceLoadResult(BaseModel):
+    namespace: str
+    count: int
+    guidance: list[ToolsetGuidanceDetail] = Field(default_factory=list)
+
+
 class ToolsetRecord(BaseModel):
     namespace: str
     title: str
@@ -99,6 +220,9 @@ class ToolsetRecord(BaseModel):
     cost_hint: str | None = None
     latency_hint: str | None = None
     trust_hint: str = "unknown"
+    future_capabilities: ToolsetFutureCapabilities = Field(default_factory=ToolsetFutureCapabilities)
+    guidance_sources: list[ToolsetGuidanceSource] = Field(default_factory=list)
+    composition_examples: list[ToolsetCompositionExample] = Field(default_factory=list)
     transport: ToolsetTransport
     default_scope: Scope = Scope.THREAD
     supported_scopes: list[Scope] = Field(default_factory=lambda: list(Scope))
@@ -132,6 +256,32 @@ class ToolsetRecord(BaseModel):
         self.recoverable_scopes = _ordered_unique_scopes(self.recoverable_scopes)
         self.loaded_scopes = _ordered_unique_scopes(self.loaded_scopes)
         self.category = self.category.strip().lower().replace(" ", "_") or "general"
+        seen_example_ids: set[str] = set()
+        for source in self.guidance_sources:
+            source.title = source.title.strip()
+            if not source.title:
+                raise ValueError("guidance source title cannot be empty")
+            source.summary = source.summary.strip() if source.summary is not None else None
+            source.path = source.path.strip() if source.path is not None else None
+            source.content = source.content.strip() if source.content is not None else None
+
+        for example in self.composition_examples:
+            example.id = example.id.strip()
+            example.title = example.title.strip()
+            if not example.id or not all(
+                character.isalnum() or character in {"_", "-"} for character in example.id
+            ):
+                raise ValueError(
+                    "composition example ids may only contain letters, numbers, underscores, and hyphens"
+                )
+            if example.id in seen_example_ids:
+                raise ValueError(f"duplicate composition example id: {example.id}")
+            seen_example_ids.add(example.id)
+            if not example.title:
+                raise ValueError("composition example title cannot be empty")
+            example.summary = example.summary.strip() if example.summary is not None else None
+            example.tags = _dedupe_clean_strings(example.tags)
+            example.required_namespaces = _dedupe_clean_strings(example.required_namespaces)
 
         if self.default_scope not in self.supported_scopes:
             raise ValueError(
@@ -369,6 +519,10 @@ class SearchResult(BaseModel):
     transport: str
     loaded: bool
     stale: bool
+    guidance_available: bool = False
+    composition_example_count: int = 0
+    capability_flags: ToolsetCapabilityFlags | None = None
+    quality: ToolsetQualitySummary | None = None
 
 
 class ToolsetSummary(BaseModel):
@@ -389,6 +543,11 @@ class ToolsetSummary(BaseModel):
     transport_state: TransportState = TransportState.INACTIVE
     tool_count: int = 0
     auth_required: bool = False
+    guidance_available: bool = False
+    composition_example_count: int = 0
+    future_capabilities: ToolsetFutureCapabilities = Field(default_factory=ToolsetFutureCapabilities)
+    capability_flags: ToolsetCapabilityFlags | None = None
+    quality: ToolsetQualitySummary | None = None
 
 
 class ToolboxCategoryOverview(BaseModel):
@@ -429,6 +588,10 @@ class ToolsetSuggestion(BaseModel):
     transport_state: TransportState = TransportState.INACTIVE
     tool_count: int = 0
     auth_required: bool = False
+    guidance_available: bool = False
+    composition_example_count: int = 0
+    capability_flags: ToolsetCapabilityFlags | None = None
+    quality: ToolsetQualitySummary | None = None
 
 
 class ToolsetSuggestionResult(BaseModel):
@@ -472,6 +635,10 @@ class ToolsetGuide(BaseModel):
     when_to_use: list[str] = Field(default_factory=list)
     recipes: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
+    quality: ToolsetQualitySummary | None = None
+    guidance_available: bool = False
+    guidance_sources: list[ToolsetGuidanceSourceSummary] = Field(default_factory=list)
+    composition_examples: list[ToolsetExampleSummary] = Field(default_factory=list)
     next_actions: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -487,6 +654,7 @@ class ToolboxCatalogAudit(BaseModel):
     toolset_count: int
     issue_count: int
     issues: list[ToolboxCatalogIssue] = Field(default_factory=list)
+    quality: list[ToolsetQualityInspection] = Field(default_factory=list)
     checked_fields: list[str] = Field(default_factory=list)
 
 

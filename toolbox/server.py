@@ -160,6 +160,40 @@ def create_server(
     def audit_toolbox_catalog() -> dict[str, object]:
         return service.audit_toolbox_catalog()
 
+    @server.tool(
+        description=(
+            "Inspect compact quality intelligence for registered toolsets: derived capability flags, "
+            "quality grade, gaps, and recommended remediation without activating downstream servers."
+        )
+    )
+    def inspect_toolset_quality(namespaces: list[str] | None = None) -> dict[str, object]:
+        return service.inspect_toolset_quality(namespaces=namespaces)
+
+    @server.tool(
+        description=(
+            "List registered composition examples for one toolset without loading their full payloads."
+        )
+    )
+    def list_toolset_examples(namespace: str) -> dict[str, object]:
+        return service.list_toolset_examples(namespace=namespace)
+
+    @server.tool(
+        description=(
+            "Load one explicit composition example payload by id after selecting a toolset."
+        )
+    )
+    def load_toolset_example(namespace: str, example_id: str) -> dict[str, object]:
+        return service.load_toolset_example(namespace=namespace, example_id=example_id)
+
+    @server.tool(
+        description=(
+            "Load explicit guidance bodies for one registered toolset after selection. "
+            "File-backed guidance is bounded to the toolset workspace and protected state paths are blocked."
+        )
+    )
+    def load_toolset_guidance(namespace: str) -> dict[str, object]:
+        return service.load_toolset_guidance(namespace=namespace)
+
     @server.tool(description="List registered toolsets and their current status.")
     def list_toolsets(scope: str | None = None) -> dict[str, object]:
         return service.list_toolsets(scope=scope)
@@ -261,6 +295,9 @@ def create_server(
         cost_hint: str | None = None,
         latency_hint: str | None = None,
         trust_hint: str = "unknown",
+        future_capabilities: dict[str, object] | None = None,
+        guidance_sources: list[dict[str, object]] | None = None,
+        composition_examples: list[dict[str, object]] | None = None,
         default_scope: str = "thread",
         supported_scopes: list[str] | None = None,
         restorable_scopes: list[str] | None = None,
@@ -282,6 +319,9 @@ def create_server(
             cost_hint=cost_hint,
             latency_hint=latency_hint,
             trust_hint=trust_hint,
+            future_capabilities=future_capabilities,
+            guidance_sources=guidance_sources,
+            composition_examples=composition_examples,
             default_scope=default_scope,
             supported_scopes=supported_scopes,
             restorable_scopes=restorable_scopes,

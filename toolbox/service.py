@@ -6,7 +6,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from mcp import types
 from pydantic import ValidationError
@@ -40,8 +40,17 @@ from toolbox.models import (
     Scope,
     StoredAuditEvent,
     ToolSchema,
+    ToolsetCapabilityFlags,
+    ToolsetCompositionExample,
     ToolContractDelta,
     ToolContractSummary,
+    ToolsetExampleDetail,
+    ToolsetExampleListResult,
+    ToolsetExampleSummary,
+    ToolsetGuidanceDetail,
+    ToolsetGuidanceLoadResult,
+    ToolsetGuidanceSource,
+    ToolsetGuidanceSourceSummary,
     ToolboxBrief,
     ToolboxCatalogAudit,
     ToolboxCatalogIssue,
@@ -52,6 +61,9 @@ from toolbox.models import (
     ToolsetContractDiff,
     ToolsetContractInspection,
     ToolsetGuide,
+    ToolsetQualityInspection,
+    ToolsetQualityInspectionResult,
+    ToolsetQualitySummary,
     ToolsetRecord,
     ToolsetSuggestion,
     ToolsetSuggestionResult,
@@ -69,6 +81,9 @@ from toolbox.validation import diff_toolsets, inventory_hash, normalize_tool
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+MAX_GUIDANCE_BYTES = 128 * 1024
 
 
 class ToolboxService:
@@ -283,6 +298,10 @@ class ToolboxService:
                 "transport": record.transport.kind,
                 "loaded": bool(record.loaded_scopes),
                 "stale": record.stale,
+                "guidance_available": self._guidance_available(record),
+                "composition_example_count": len(record.composition_examples),
+                "capability_flags": self._toolset_capability_flags(record).model_dump(mode="json"),
+                "quality": self._toolset_quality_summary(record).model_dump(mode="json"),
             }
             for score, record, reasons in ranked[:limit]
         ]
@@ -409,6 +428,10 @@ class ToolboxService:
                 transport_state=record.transport_state,
                 tool_count=record.tool_count,
                 auth_required=record.auth_required,
+                guidance_available=self._guidance_available(record),
+                composition_example_count=len(record.composition_examples),
+                capability_flags=self._toolset_capability_flags(record),
+                quality=self._toolset_quality_summary(record),
             )
             for score, record, reasons in ranked[: max(0, limit)]
         ]
@@ -659,6 +682,10 @@ class ToolboxService:
                 "when_to_use": [],
                 "recipes": [],
                 "examples": [],
+                "quality": None,
+                "guidance_available": False,
+                "guidance_sources": [],
+                "composition_examples": [],
                 "next_actions": [],
                 "warnings": [],
                 "error": self._error(
@@ -704,6 +731,22 @@ class ToolboxService:
                 },
             ]
         )
+        if record.guidance_sources:
+            next_actions.append(
+                {
+                    "tool": "load_toolset_guidance",
+                    "namespace": record.namespace,
+                    "when": "Use only after selecting this toolset and needing its full guidance body.",
+                }
+            )
+        if record.composition_examples:
+            next_actions.append(
+                {
+                    "tool": "list_toolset_examples",
+                    "namespace": record.namespace,
+                    "when": "Use to inspect available composition examples before loading one by id.",
+                }
+            )
 
         guide = ToolsetGuide(
             toolset=self._toolset_summary(record),
@@ -716,6 +759,10 @@ class ToolboxService:
             ),
             recipes=record.recipes,
             examples=record.examples,
+            quality=self._toolset_quality_summary(record),
+            guidance_available=self._guidance_available(record),
+            guidance_sources=self._guidance_source_summaries(record),
+            composition_examples=self._composition_example_summaries(record),
             next_actions=next_actions,
             warnings=warnings,
         )
@@ -773,9 +820,131 @@ class ToolboxService:
             toolset_count=len(self._load_all_records()),
             issue_count=len(issues),
             issues=issues,
+            quality=[
+                self._toolset_quality_inspection(record)
+                for record in sorted(self._load_all_records(), key=lambda item: item.namespace)
+            ],
             checked_fields=checked_fields,
         )
         payload = audit.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def inspect_toolset_quality(self, namespaces: list[str] | None = None) -> dict[str, Any]:
+        selected = namespaces or [record.namespace for record in self._load_all_records()]
+        quality: list[ToolsetQualityInspection] = []
+        missing: list[ErrorInfo] = []
+        for namespace in selected:
+            record = self._get_record(namespace)
+            if record is None:
+                missing.append(
+                    self._error_info(
+                        "unknown_toolset",
+                        f"Unknown toolset: {namespace}",
+                        namespace=namespace,
+                        retryable=False,
+                    )
+                )
+                continue
+            quality.append(self._toolset_quality_inspection(record))
+
+        result = ToolsetQualityInspectionResult(count=len(quality), quality=quality, missing=missing)
+        payload = result.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def list_toolset_examples(self, namespace: str) -> dict[str, Any]:
+        record = self._get_record(namespace)
+        if record is None:
+            return {
+                "namespace": namespace,
+                "count": 0,
+                "examples": [],
+                "error": self._error(
+                    "unknown_toolset",
+                    f"Unknown toolset: {namespace}",
+                    namespace=namespace,
+                    retryable=False,
+                ),
+            }
+
+        result = ToolsetExampleListResult(
+            namespace=record.namespace,
+            count=len(record.composition_examples),
+            examples=self._composition_example_summaries(record),
+        )
+        payload = result.model_dump(mode="json")
+        payload["error"] = None
+        return payload
+
+    def load_toolset_example(self, namespace: str, example_id: str) -> dict[str, Any]:
+        record = self._get_record(namespace)
+        if record is None:
+            return {
+                "namespace": namespace,
+                "example": None,
+                "error": self._error(
+                    "unknown_toolset",
+                    f"Unknown toolset: {namespace}",
+                    namespace=namespace,
+                    retryable=False,
+                ),
+            }
+
+        for example in record.composition_examples:
+            if example.id == example_id:
+                detail = self._composition_example_detail(example)
+                return {
+                    "namespace": record.namespace,
+                    "example": detail.model_dump(mode="json"),
+                    "error": None,
+                }
+
+        return {
+            "namespace": record.namespace,
+            "example": None,
+            "error": self._error(
+                "unknown_example",
+                f"Unknown example for {namespace}: {example_id}",
+                namespace=namespace,
+                retryable=False,
+            ),
+        }
+
+    def load_toolset_guidance(self, namespace: str) -> dict[str, Any]:
+        record = self._get_record(namespace)
+        if record is None:
+            return {
+                "namespace": namespace,
+                "count": 0,
+                "guidance": [],
+                "error": self._error(
+                    "unknown_toolset",
+                    f"Unknown toolset: {namespace}",
+                    namespace=namespace,
+                    retryable=False,
+                ),
+            }
+
+        guidance: list[ToolsetGuidanceDetail] = []
+        for source in record.guidance_sources:
+            detail, error = self._load_guidance_source(record, source)
+            if error is not None:
+                return {
+                    "namespace": record.namespace,
+                    "count": 0,
+                    "guidance": [],
+                    "error": error.model_dump(mode="json"),
+                }
+            if detail is not None:
+                guidance.append(detail)
+
+        result = ToolsetGuidanceLoadResult(
+            namespace=record.namespace,
+            count=len(guidance),
+            guidance=guidance,
+        )
+        payload = result.model_dump(mode="json")
         payload["error"] = None
         return payload
 
@@ -809,6 +978,16 @@ class ToolboxService:
                     "cost_hint": record.cost_hint,
                     "latency_hint": record.latency_hint,
                     "trust_hint": record.trust_hint,
+                    "future_capabilities": record.future_capabilities.model_dump(mode="json"),
+                    "guidance_available": self._guidance_available(record),
+                    "guidance_sources": [
+                        source.model_dump(mode="json") for source in self._guidance_source_summaries(record)
+                    ],
+                    "composition_examples": [
+                        example.model_dump(mode="json") for example in self._composition_example_summaries(record)
+                    ],
+                    "capability_flags": self._toolset_capability_flags(record).model_dump(mode="json"),
+                    "quality": self._toolset_quality_summary(record).model_dump(mode="json"),
                     "loaded": bool(record.loaded_scopes),
                     "scope": [item.value for item in record.loaded_scopes],
                     "recoverable_scopes": [item.value for item in record.recoverable_scopes],
@@ -1392,9 +1571,20 @@ class ToolboxService:
                         "cost_hint": record.cost_hint,
                         "latency_hint": record.latency_hint,
                         "trust_hint": record.trust_hint,
+                        "future_capabilities": record.future_capabilities.model_dump(mode="json"),
+                        "guidance_available": self._guidance_available(record),
+                        "guidance_sources": [
+                            source.model_dump(mode="json") for source in self._guidance_source_summaries(record)
+                        ],
+                        "composition_examples": [
+                            example.model_dump(mode="json") for example in self._composition_example_summaries(record)
+                        ],
+                        "capability_flags": self._toolset_capability_flags(record).model_dump(mode="json"),
+                        "quality": self._toolset_quality_summary(record).model_dump(mode="json"),
                         "transport": self._public_transport(record.transport),
                         "default_scope": record.default_scope.value,
                         "scope_policy": self._scope_policy(record),
+                        "auth_required": record.auth_required,
                     },
                     "activation": {
                         "loaded_scopes": [scope.value for scope in record.loaded_scopes],
@@ -1460,6 +1650,9 @@ class ToolboxService:
         cost_hint: str | None = None,
         latency_hint: str | None = None,
         trust_hint: str = "unknown",
+        future_capabilities: dict[str, Any] | None = None,
+        guidance_sources: list[dict[str, Any]] | None = None,
+        composition_examples: list[dict[str, Any]] | None = None,
         default_scope: str = "thread",
         supported_scopes: list[str] | None = None,
         restorable_scopes: list[str] | None = None,
@@ -1536,6 +1729,9 @@ class ToolboxService:
                         "cost_hint": self._clean_optional_text(cost_hint),
                         "latency_hint": self._clean_optional_text(latency_hint),
                         "trust_hint": self._clean_optional_text(trust_hint) or "unknown",
+                        "future_capabilities": future_capabilities or {},
+                        "guidance_sources": guidance_sources or [],
+                        "composition_examples": composition_examples or [],
                         "transport": normalized_transport.model_dump(mode="python"),
                         "default_scope": default_scope,
                         "supported_scopes": supported_scopes if supported_scopes is not None else list(Scope),
@@ -1591,6 +1787,16 @@ class ToolboxService:
                     "cost_hint": record.cost_hint,
                     "latency_hint": record.latency_hint,
                     "trust_hint": record.trust_hint,
+                    "future_capabilities": record.future_capabilities.model_dump(mode="json"),
+                    "guidance_available": self._guidance_available(record),
+                    "guidance_sources": [
+                        source.model_dump(mode="json") for source in self._guidance_source_summaries(record)
+                    ],
+                    "composition_examples": [
+                        example.model_dump(mode="json") for example in self._composition_example_summaries(record)
+                    ],
+                    "capability_flags": self._toolset_capability_flags(record).model_dump(mode="json"),
+                    "quality": self._toolset_quality_summary(record).model_dump(mode="json"),
                     "transport": self._public_transport(record.transport),
                     "default_scope": record.default_scope.value,
                     "scope_policy": self._scope_policy(record),
@@ -2625,6 +2831,301 @@ class ToolboxService:
         normalized = "".join(character for character in cleaned if character.isalnum() or character in {"_", "-"})
         return normalized or "general"
 
+    def _guidance_available(self, record: ToolsetRecord) -> bool:
+        return bool(record.guidance_sources or record.recipes or record.examples or record.composition_examples)
+
+    def _guidance_source_summaries(self, record: ToolsetRecord) -> list[ToolsetGuidanceSourceSummary]:
+        return [
+            ToolsetGuidanceSourceSummary(
+                kind=source.kind,
+                title=source.title,
+                summary=source.summary,
+                path=source.path,
+            )
+            for source in record.guidance_sources
+        ]
+
+    def _composition_example_summaries(self, record: ToolsetRecord) -> list[ToolsetExampleSummary]:
+        return [self._composition_example_summary(example) for example in record.composition_examples]
+
+    @staticmethod
+    def _composition_example_summary(example: ToolsetCompositionExample) -> ToolsetExampleSummary:
+        return ToolsetExampleSummary(
+            id=example.id,
+            title=example.title,
+            summary=example.summary,
+            kind=example.kind,
+            tags=example.tags,
+            required_namespaces=example.required_namespaces,
+        )
+
+    @staticmethod
+    def _composition_example_detail(example: ToolsetCompositionExample) -> ToolsetExampleDetail:
+        return ToolsetExampleDetail(
+            id=example.id,
+            title=example.title,
+            summary=example.summary,
+            kind=example.kind,
+            tags=example.tags,
+            required_namespaces=example.required_namespaces,
+            payload=example.payload,
+        )
+
+    def _toolset_quality_inspection(self, record: ToolsetRecord) -> ToolsetQualityInspection:
+        flags = self._toolset_capability_flags(record)
+        return ToolsetQualityInspection(
+            namespace=record.namespace,
+            title=record.title,
+            capability_flags=flags,
+            quality=self._toolset_quality_summary(record, flags),
+        )
+
+    def _toolset_capability_flags(self, record: ToolsetRecord) -> ToolsetCapabilityFlags:
+        snapshot = self.store.get_schema_snapshot(record.namespace)
+        runtime = self.transport_manager.runtime_for(record.namespace)
+        mounted_tools = [normalize_tool(tool) for tool in runtime.tools] if runtime is not None else []
+        cached_tools = snapshot.tools if snapshot is not None else []
+        tools_for_contract = mounted_tools or cached_tools
+
+        return ToolsetCapabilityFlags(
+            has_cached_contract=snapshot is not None,
+            has_mounted_contract=runtime is not None,
+            has_guidance=self._guidance_available(record),
+            has_recipes=bool(record.recipes),
+            has_examples=bool(record.examples or record.composition_examples),
+            supports_health_check=True,
+            supports_batch_composition=True,
+            supports_program_composition=True,
+            supports_structured_outputs=any(tool.output_schema is not None for tool in tools_for_contract),
+            requires_auth=record.auth_required,
+            requires_workspace_root=record.transport.cwd is not None,
+            has_future_task_metadata=record.future_capabilities.supports_tasks,
+            has_future_trigger_metadata=record.future_capabilities.supports_triggers,
+            has_future_streaming_metadata=record.future_capabilities.supports_streaming,
+            has_future_reference_metadata=record.future_capabilities.supports_reference_results,
+        )
+
+    def _toolset_quality_summary(
+        self,
+        record: ToolsetRecord,
+        flags: ToolsetCapabilityFlags | None = None,
+    ) -> ToolsetQualitySummary:
+        flags = flags or self._toolset_capability_flags(record)
+        score = 30
+        strengths: list[str] = []
+        gaps: list[str] = []
+
+        def add_strength(condition: bool, name: str, points: int) -> None:
+            nonlocal score
+            if condition:
+                strengths.append(name)
+                score += points
+
+        def add_gap(condition: bool, name: str) -> None:
+            if condition:
+                gaps.append(name)
+
+        add_strength(record.category != "general", "categorized", 8)
+        add_gap(record.category == "general", "category")
+        add_strength(bool(record.aliases), "aliases", 8)
+        add_gap(not record.aliases, "aliases")
+        add_strength(flags.has_examples, "examples", 8)
+        add_strength(flags.has_recipes, "recipes", 8)
+        add_gap(not flags.has_examples and not flags.has_recipes, "examples_or_recipes")
+        add_strength(record.activation_hint is not None, "activation_hint", 8)
+        add_gap(record.activation_hint is None, "activation_hint")
+        add_strength(record.cost_hint is not None, "cost_hint", 5)
+        add_gap(record.cost_hint is None, "cost_hint")
+        add_strength(record.latency_hint is not None, "latency_hint", 5)
+        add_gap(record.latency_hint is None, "latency_hint")
+        add_strength(record.trust_hint != "unknown", "trust_hint", 6)
+        add_gap(record.trust_hint == "unknown", "trust_hint")
+        add_strength(flags.has_cached_contract, "cached_contract", 10)
+        add_gap(not flags.has_cached_contract, "cached_contract")
+        add_strength(flags.has_mounted_contract, "mounted_contract", 8)
+        add_strength(flags.has_guidance, "guidance", 8)
+        add_gap(not flags.has_guidance, "guidance")
+        add_strength(flags.supports_structured_outputs, "structured_outputs", 6)
+
+        if flags.requires_auth:
+            strengths.append("auth_requirement_visible")
+        if flags.requires_workspace_root:
+            strengths.append("workspace_root_visible")
+
+        if record.stale or record.transport_state is TransportState.STALE:
+            gaps.append("stale_state")
+            score -= 35
+        if record.transport_state is TransportState.FAILED:
+            gaps.append("transport_failed")
+            score -= 35
+        if record.last_error is not None:
+            gaps.append(f"last_error:{record.last_error.code}")
+            score -= 20
+        if record.last_health_status in {HealthStatus.STALE, HealthStatus.FAILED}:
+            gaps.append("health_not_healthy")
+            score -= 20
+
+        score = max(0, min(100, score))
+        if record.stale or record.transport_state in {TransportState.STALE, TransportState.FAILED}:
+            grade: Literal["excellent", "good", "thin", "risky"] = "risky"
+        elif score >= 85:
+            grade = "excellent"
+        elif score >= 60:
+            grade = "good"
+        elif score >= 25:
+            grade = "thin"
+        else:
+            grade = "risky"
+
+        metadata_gap_names = {
+            "category",
+            "aliases",
+            "examples_or_recipes",
+            "activation_hint",
+            "cost_hint",
+            "latency_hint",
+            "trust_hint",
+            "guidance",
+        }
+        if record.stale or record.transport_state is TransportState.STALE:
+            recommended_next_action = "refresh"
+        elif record.transport_state is TransportState.FAILED or record.last_error is not None:
+            recommended_next_action = "avoid_until_fixed"
+        elif any(gap in metadata_gap_names for gap in gaps):
+            recommended_next_action = "add_metadata"
+        elif not flags.has_cached_contract:
+            recommended_next_action = "inspect"
+        else:
+            recommended_next_action = "use"
+
+        return ToolsetQualitySummary(
+            score=score,
+            grade=grade,
+            strengths=self._dedupe_strings(strengths),
+            gaps=self._dedupe_strings(gaps),
+            recommended_next_action=recommended_next_action,
+        )
+
+    def _load_guidance_source(
+        self,
+        record: ToolsetRecord,
+        source: ToolsetGuidanceSource,
+    ) -> tuple[ToolsetGuidanceDetail | None, ErrorInfo | None]:
+        if source.kind in {"inline", "registered"}:
+            if source.content is None:
+                return None, self._error_info(
+                    "guidance_content_missing",
+                    f"Guidance source '{source.title}' has no content.",
+                    namespace=record.namespace,
+                    retryable=False,
+                )
+            return (
+                ToolsetGuidanceDetail(
+                    kind=source.kind,
+                    title=source.title,
+                    summary=source.summary,
+                    path=source.path,
+                    content=source.content,
+                ),
+                None,
+            )
+
+        resolved, error = self._resolve_guidance_path(record, source)
+        if error is not None:
+            return None, error
+        assert resolved is not None
+
+        try:
+            if resolved.stat().st_size > MAX_GUIDANCE_BYTES:
+                return None, self._error_info(
+                    "guidance_file_too_large",
+                    f"Guidance file exceeds {MAX_GUIDANCE_BYTES} bytes: {source.path}",
+                    namespace=record.namespace,
+                    retryable=False,
+                )
+            content = resolved.read_text(encoding="utf-8")
+        except OSError as exc:
+            return None, self._error_info(
+                "guidance_file_unreadable",
+                str(exc),
+                namespace=record.namespace,
+                retryable=False,
+            )
+
+        return (
+            ToolsetGuidanceDetail(
+                kind=source.kind,
+                title=source.title,
+                summary=source.summary,
+                path=source.path,
+                content=content,
+            ),
+            None,
+        )
+
+    def _resolve_guidance_path(
+        self,
+        record: ToolsetRecord,
+        source: ToolsetGuidanceSource,
+    ) -> tuple[Path | None, ErrorInfo | None]:
+        if source.path is None or not source.path.strip():
+            return None, self._error_info(
+                "guidance_path_missing",
+                f"Guidance source '{source.title}' is missing a path.",
+                namespace=record.namespace,
+                retryable=False,
+            )
+
+        try:
+            root = Path(record.transport.cwd or self.workspace).resolve()
+            candidate = Path(source.path)
+            resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
+            relative_path = resolved.relative_to(root)
+        except (OSError, ValueError) as exc:
+            return None, self._error_info(
+                "guidance_path_outside_root",
+                f"Guidance path must stay within the toolset workspace root: {source.path}",
+                namespace=record.namespace,
+                retryable=False,
+                details={"reason": str(exc)},
+            )
+
+        if self._is_forbidden_guidance_path(relative_path):
+            return None, self._error_info(
+                "forbidden_guidance_path",
+                f"Guidance path is protected and cannot be loaded: {source.path}",
+                namespace=record.namespace,
+                retryable=False,
+            )
+        if not resolved.is_file():
+            return None, self._error_info(
+                "guidance_file_missing",
+                f"Guidance file does not exist: {source.path}",
+                namespace=record.namespace,
+                retryable=False,
+            )
+        return resolved, None
+
+    @staticmethod
+    def _is_forbidden_guidance_path(relative_path: Path) -> bool:
+        parts = [part.lower() for part in relative_path.parts]
+        name = relative_path.name.lower()
+        forbidden_names = {
+            ".env",
+            ".env.local",
+            "credentials.json",
+            "secrets.json",
+            "state.json",
+            "state.key",
+            "tokens.json",
+        }
+        forbidden_suffixes = {".key", ".pem", ".p12", ".pfx"}
+        return (
+            ".toolbox" in parts
+            or name in forbidden_names
+            or any(name.endswith(suffix) for suffix in forbidden_suffixes)
+        )
+
     def _toolset_summary(self, record: ToolsetRecord) -> ToolsetSummary:
         return ToolsetSummary(
             namespace=record.namespace,
@@ -2644,6 +3145,11 @@ class ToolboxService:
             transport_state=record.transport_state,
             tool_count=record.tool_count,
             auth_required=record.auth_required,
+            guidance_available=self._guidance_available(record),
+            composition_example_count=len(record.composition_examples),
+            future_capabilities=record.future_capabilities,
+            capability_flags=self._toolset_capability_flags(record),
+            quality=self._toolset_quality_summary(record),
         )
 
     def _score_record_for_terms(self, record: ToolsetRecord, terms: list[str]) -> tuple[int, list[str]]:
@@ -2660,6 +3166,43 @@ class ToolboxService:
             ("aliases", " ".join(record.aliases), 4),
             ("examples", " ".join(record.examples), 2),
             ("recipes", " ".join(record.recipes), 3),
+            (
+                "guidance_sources",
+                " ".join(
+                    self._dedupe_strings(
+                        [
+                            item.title
+                            for item in record.guidance_sources
+                        ]
+                        + [
+                            item.summary or ""
+                            for item in record.guidance_sources
+                        ]
+                    )
+                ),
+                2,
+            ),
+            (
+                "composition_examples",
+                " ".join(
+                    self._dedupe_strings(
+                        [
+                            item.title
+                            for item in record.composition_examples
+                        ]
+                        + [
+                            item.summary or ""
+                            for item in record.composition_examples
+                        ]
+                        + [
+                            tag
+                            for item in record.composition_examples
+                            for tag in item.tags
+                        ]
+                    )
+                ),
+                2,
+            ),
         ]
 
         score = 0

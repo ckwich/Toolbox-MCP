@@ -20,7 +20,8 @@ For Toolbox, the strongest takeaways are:
 
 ## Implementation Status
 
-The near-term, agent-facing subset is now implemented across Phase 7 and Phase 8:
+The near-term, agent-facing subset is now implemented across Phase 7, Phase 8, and
+Phase 9:
 
 1. Compact registered server discovery: `toolbox_overview`, `search_toolsets`, and `suggest_toolsets_for_task`.
 2. Rich registration metadata: category, aliases, examples, recipes, activation hint, cost hint, latency hint, and trust hint.
@@ -29,8 +30,14 @@ The near-term, agent-facing subset is now implemented across Phase 7 and Phase 8
 5. Lazy per-toolset guidance: `get_toolset_guide`.
 6. Catalog quality checks: `audit_toolbox_catalog`.
 7. Composition-ready operation: `describe_mounted_tools`, `run_tool_batch`, `run_tool_program`, and JSON-safe structured result envelopes.
+8. Derived quality intelligence: `inspect_toolset_quality` plus compact `capability_flags`
+   and `quality` summaries on discovery surfaces.
+9. Explicit lazy detail loading: `load_toolset_guidance`, `list_toolset_examples`, and
+   `load_toolset_example`.
+10. Inert future-protocol metadata for tasks, triggers, streaming, and reference results.
 
-Future protocol-shaped ideas such as tasks, triggers, streaming, and native skills-over-MCP remain intentionally deferred until client and SDK support is mature enough to verify against.
+Runtime behavior for tasks, triggers, streaming, and native skills-over-MCP remains
+intentionally deferred until client and SDK support is mature enough to verify against.
 
 ## What Applies Directly To Toolbox
 
@@ -226,8 +233,8 @@ Use this as a lightweight checklist when building or accepting new MCP servers i
 
 ## Near-term Toolbox Opportunities
 
-The first discovery and guidance opportunities are already covered by Phase 7 and Phase
-8. The remaining useful work has been converted into Phase 9:
+The first discovery and guidance opportunities were covered by Phase 7 and Phase 8.
+The remaining quality-oriented work is now covered by Phase 9:
 
 - `09-01`: derived capability flags and quality summaries
 - `09-02`: lazy guidance-source indexing and composition examples
@@ -245,10 +252,11 @@ Candidate tools:
 
 These should use the state file, cached contracts, metadata, and audit state.
 
-Status: mostly completed by `toolbox_overview`, `search_toolsets`,
+Status: completed by `toolbox_overview`, `search_toolsets`,
 `suggest_toolsets_for_task`, `get_toolset_status`, `inspect_cached_contracts`,
-`describe_mounted_tools`, `toolbox_brief`, and `get_toolset_guide`. Phase 9 should add
-derived `capability_flags` rather than another broad search surface.
+`describe_mounted_tools`, `toolbox_brief`, `get_toolset_guide`, and
+`inspect_toolset_quality`. Phase 9 added derived `capability_flags` rather than another
+broad search surface.
 
 ### 2. Guidance indexing
 
@@ -263,8 +271,8 @@ Possible sources:
 
 Toolbox should keep the guidance body lazy-loaded.
 
-Status: planned for `09-02`. Phase 8 added compact `recipes`; Phase 9 should add bounded
-lazy guidance sources.
+Status: completed in `09-02`. Phase 8 added compact `recipes`; Phase 9 added bounded
+lazy guidance sources through `load_toolset_guidance`.
 
 ### 3. Capability scoring
 
@@ -288,7 +296,8 @@ Example:
 
 This gives agents a way to prefer safer, better-described servers.
 
-Status: planned for `09-01`.
+Status: completed in `09-01` through `inspect_toolset_quality` and compact quality
+summaries on overview, search, suggestions, guide, status, and catalog audit payloads.
 
 ### 4. Composition examples
 
@@ -301,7 +310,8 @@ Example surfaces:
 
 This would make `run_tool_program` easier to use reliably.
 
-Status: planned for `09-02`.
+Status: completed in `09-02` through `list_toolset_examples` and
+`load_toolset_example`.
 
 ### 5. Prepared future support for tasks/triggers/streaming
 
@@ -314,7 +324,7 @@ Do not build against speculative protocol details yet. Instead, reserve clean me
 
 This keeps Toolbox ready without making the current implementation brittle.
 
-Status: planned as inert metadata only. Do not implement real task, trigger, streaming,
+Status: implemented as inert metadata only. Do not implement real task, trigger, streaming,
 or reference-result behavior until client and SDK support is proven.
 
 ## What Not To Do Yet
@@ -326,20 +336,20 @@ or reference-result behavior until client and SDK support is proven.
 - Do not expose raw transport args/env in discovery responses.
 - Do not assume `cwd` is enough for workspace-aware servers; root discovery should be explicit.
 
-## Recommended Next Session
+## Phase 9 Completion Notes
 
-Start Phase 9 with `09-01`: derived capability flags and quality summaries.
+Phase 9 implemented the recommended quality-intelligence slice:
 
-The smallest useful vertical slice is:
-
-1. Add compact capability and quality models.
-2. Derive flags from registration metadata, cached contracts, mounted state, health state,
+1. Added compact capability and quality models.
+2. Derives flags from registration metadata, cached contracts, mounted state, health state,
    auth requirements, and composition readiness.
-3. Expose one explicit quality-inspection tool.
-4. Thread compact quality summaries into existing guidance surfaces only where the payload
+3. Exposes one explicit quality-inspection tool.
+4. Threads compact quality summaries into existing guidance surfaces only where the payload
    stays small.
-5. Add tests for inactive, active, stale, auth-required, thin-metadata, and cached-contract
-   cases.
-6. Keep raw contracts, long guidance, and example payloads behind explicit follow-up calls.
+5. Added tests for active, stale, thin-metadata, cached-contract, lazy-guidance, and
+   protected-path cases.
+6. Keeps raw contracts, long guidance, and example payloads behind explicit follow-up calls.
 
-Then do `09-02`: lazy guidance-source indexing and composition examples.
+The next useful polish area is operational ergonomics around real registered toolsets:
+catalog seeding, guidance authoring conventions, and examples for the MCPs the user
+actually runs through Toolbox.

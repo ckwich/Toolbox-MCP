@@ -23,13 +23,17 @@ lazy follow-up surfaces.
   composition execution.
 - Public transport metadata and persisted transport secrets are already hardened.
 
-## What Phase 9 Should Add
+## Implementation Status
+
+Phase 9 is implemented in the `codex/phase9-quality-intelligence` branch.
+
+## What Phase 9 Added
 
 - Derived `capability_flags` for registered toolsets.
 - A compact `quality` summary that explains guidance coverage, composition readiness,
   health/state posture, auth/workspace assumptions, and missing catalog metadata.
-- Lazy guidance-source metadata such as a constrained `guidance_path`, without putting
-  entire markdown bodies into overview/search results.
+- Lazy guidance-source metadata, including constrained file-backed guidance paths, without
+  putting entire markdown bodies into overview/search results.
 - Composition example metadata and explicit example loading by id.
 - Inert future-protocol metadata for tasks, triggers, streaming, and reference results.
 
@@ -43,7 +47,12 @@ lazy follow-up surfaces.
 - Do not allow arbitrary guidance paths. Any path-based guidance should be repo/workspace
   bounded and should avoid reading secrets or generated state.
 
-## Recommended Start
+## Validation Focus
 
-Start with `09-01`: capability flags and quality summaries. This creates the data model
-that `09-02` can build on for lazy guidance and composition examples.
+The critical validation gates are:
+
+- default discovery must stay compact and must not include guidance bodies or example payloads
+- file-backed guidance must stay inside the registered workspace root
+- `.toolbox` state, key files, env files, and common secret material must not load as guidance
+- quality summaries must be derived from actual registry/cache/mounted/health state rather than
+  hand-maintained registration claims

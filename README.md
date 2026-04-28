@@ -14,6 +14,9 @@ This first implementation focuses on a narrow end-to-end loop:
 - control-plane registration management via `register_toolset` and `unregister_toolsets`
 - agent-facing discovery via `toolbox_brief`, `toolbox_overview`, `suggest_toolsets_for_task`,
   `plan_toolset_activation`, `get_toolset_guide`, and `audit_toolbox_catalog`
+- derived toolset quality intelligence via `inspect_toolset_quality`
+- lazy guidance and composition-example loading via `load_toolset_guidance`,
+  `list_toolset_examples`, and `load_toolset_example`
 - scoped activation, live mounting, refresh, and deactivation
 - bounded lifecycle audit logging with control-plane querying
 - cached and mounted contract inspection with compact schema summaries
@@ -65,6 +68,17 @@ without dumping raw downstream schemas.
 hard for agents to discover or use. It is intended for improving the catalog itself, not
 for normal task execution.
 
+`inspect_toolset_quality` derives compact `capability_flags` and `quality` summaries from
+registration metadata, cached contracts, mounted state, health/stale posture, auth/workspace
+assumptions, and composition readiness. Agents can use it to prefer well-described,
+structured, healthy toolsets before activation.
+
+`load_toolset_guidance`, `list_toolset_examples`, and `load_toolset_example` keep heavier
+help material lazy. Search, overview, status, and guide surfaces advertise whether guidance
+or examples exist, but full guidance bodies and example payloads require explicit follow-up
+calls. File-backed guidance is resolved inside the registered toolset workspace and protected
+Toolbox state or secret-like files are blocked.
+
 Toolset registrations now support agent-facing metadata fields:
 
 - `category`: coarse capability bucket such as `skills`, `docs`, `security`, or `automation`
@@ -73,6 +87,9 @@ Toolset registrations now support agent-facing metadata fields:
 - `recipes`: compact workflow hints for using the toolset correctly after selection
 - `activation_hint`: when to activate the toolset
 - `cost_hint`, `latency_hint`, and `trust_hint`: compact planning signals for choosing among candidates
+- `future_capabilities`: inert protocol-shaped metadata for tasks, triggers, streaming, and reference results
+- `guidance_sources`: inline, registered, or workspace-bounded file guidance loaded only on request
+- `composition_examples`: batch or program examples listed compactly and loaded explicitly by id
 
 `run_tool_batch` provides a first step toward programmatic tool calling. It lets one
 Toolbox call execute multiple mounted tool calls and pass data from earlier steps into
@@ -319,6 +336,10 @@ The current agent-facing discovery surface is:
 - `plan_toolset_activation`: dry-run which toolsets should be mounted for a task and scope
 - `get_toolset_guide`: load compact recipes and next actions for one selected toolset
 - `audit_toolbox_catalog`: identify registrations with thin agent-facing metadata
+- `inspect_toolset_quality`: inspect derived flags, quality grades, gaps, and next-action hints
+- `load_toolset_guidance`: explicitly load guidance bodies for one selected toolset
+- `list_toolset_examples`: list composition examples for one selected toolset without payloads
+- `load_toolset_example`: explicitly load one composition example payload by id
 - `search_toolsets`: search registered toolsets by metadata and agent-facing hints
 
 The current contract inspection surface is:
@@ -347,5 +368,5 @@ echoing the full initial context or reloading the full mounted inventory.
 - [docs/quickstart.md](docs/quickstart.md): fastest end-to-end local trial
 - [docs/composition-workflows.md](docs/composition-workflows.md): progressive discovery, batch, and scripted composition examples
 - [MCP_SERVER_RECOMMENDATIONS.md](MCP_SERVER_RECOMMENDATIONS.md): transcript-derived MCP server quality notes and Toolbox implementation status
-- [.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md](.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md): planned next session for capability flags, quality scoring, lazy guidance, and examples
+- [.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md](.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md): Phase 9 design notes for quality scoring, lazy guidance, and examples
 - [HANDOFF.md](HANDOFF.md): current operator/developer handoff

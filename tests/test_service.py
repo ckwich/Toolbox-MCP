@@ -271,6 +271,323 @@ async def test_agent_guidance_surfaces_brief_plan_guide_and_catalog_audit(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_toolset_quality_inspection_derives_flags_and_remediation(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    manifest_path = service.fake_manifest_path
+
+    try:
+        rich_registration = await service.register_toolset(
+            namespace="quality_docs",
+            title="Quality Docs",
+            description="Search project documentation and return structured release guidance.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(manifest_path)],
+                "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                "cwd": str(tmp_path),
+            },
+            tags=["docs", "release", "guidance"],
+            category="docs",
+            aliases=["documentation search", "release notes"],
+            examples=["Find the release checklist before packaging."],
+            recipes=["Search docs first, then load only the needed guidance source."],
+            activation_hint="Activate when the task needs repo-local documentation.",
+            cost_hint="low",
+            latency_hint="low",
+            trust_hint="local",
+            future_capabilities={
+                "supports_tasks": True,
+                "supports_triggers": True,
+                "supports_streaming": True,
+                "supports_reference_results": True,
+            },
+            guidance_sources=[
+                {
+                    "kind": "inline",
+                    "title": "Quick Usage",
+                    "summary": "Use for release and documentation workflows.",
+                    "content": "Load detailed guidance only after this toolset is selected.",
+                }
+            ],
+            composition_examples=[
+                {
+                    "id": "release_check",
+                    "title": "Release Check",
+                    "summary": "Batch together documentation lookups for a release.",
+                    "kind": "batch",
+                    "tags": ["release"],
+                    "required_namespaces": ["quality_docs"],
+                    "payload": {"steps": [{"tool": "quality_docs.fake_status", "arguments": {}}]},
+                }
+            ],
+        )
+        assert rich_registration["error"] is None
+        assert rich_registration["registered"]["future_capabilities"]["supports_tasks"] is True
+        assert rich_registration["registered"]["guidance_available"] is True
+        assert rich_registration["registered"]["composition_examples"][0]["id"] == "release_check"
+        assert "payload" not in rich_registration["registered"]["composition_examples"][0]
+
+        thin_registration = await service.register_toolset(
+            namespace="thin_tool",
+            title="Thin Tool",
+            description="A deliberately under-described toolset.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(manifest_path)],
+                "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                "cwd": str(tmp_path),
+            },
+        )
+        assert thin_registration["error"] is None
+
+        stale_registration = await service.register_toolset(
+            namespace="stale_docs",
+            title="Stale Docs",
+            description="A previously useful docs helper that is now stale.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(manifest_path)],
+                "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                "cwd": str(tmp_path),
+            },
+            tags=["docs"],
+            category="docs",
+            aliases=["stale documentation"],
+            examples=["Find older docs."],
+            recipes=["Refresh before relying on this toolset."],
+            activation_hint="Activate only after stale state is reconciled.",
+            cost_hint="low",
+            latency_hint="low",
+            trust_hint="local",
+        )
+        assert stale_registration["error"] is None
+
+        activation = await service.activate_toolsets(["quality_docs"], scope="thread")
+        assert activation["error"] is None
+        assert await service.mark_toolset_stale("stale_docs", "manifest_changed") is True
+
+        inspection = service.inspect_toolset_quality(
+            ["quality_docs", "thin_tool", "stale_docs", "missing_toolset"]
+        )
+
+        assert inspection["error"] is None
+        assert inspection["count"] == 3
+        assert inspection["missing"][0]["code"] == "unknown_toolset"
+
+        by_namespace = {item["namespace"]: item for item in inspection["quality"]}
+        rich = by_namespace["quality_docs"]
+        assert rich["capability_flags"]["has_cached_contract"] is True
+        assert rich["capability_flags"]["has_mounted_contract"] is True
+        assert rich["capability_flags"]["has_guidance"] is True
+        assert rich["capability_flags"]["has_recipes"] is True
+        assert rich["capability_flags"]["has_examples"] is True
+        assert rich["capability_flags"]["supports_structured_outputs"] is True
+        assert rich["capability_flags"]["requires_workspace_root"] is True
+        assert rich["capability_flags"]["has_future_task_metadata"] is True
+        assert rich["capability_flags"]["has_future_trigger_metadata"] is True
+        assert rich["capability_flags"]["has_future_streaming_metadata"] is True
+        assert rich["capability_flags"]["has_future_reference_metadata"] is True
+        assert rich["quality"]["grade"] == "excellent"
+        assert rich["quality"]["recommended_next_action"] == "use"
+
+        thin = by_namespace["thin_tool"]
+        assert thin["capability_flags"]["has_guidance"] is False
+        assert thin["capability_flags"]["has_cached_contract"] is False
+        assert thin["quality"]["grade"] == "thin"
+        assert thin["quality"]["recommended_next_action"] == "add_metadata"
+        assert "activation_hint" in thin["quality"]["gaps"]
+
+        stale = by_namespace["stale_docs"]
+        assert stale["quality"]["grade"] == "risky"
+        assert stale["quality"]["recommended_next_action"] == "refresh"
+        assert "stale_state" in stale["quality"]["gaps"]
+
+        overview = service.toolbox_overview()
+        summary = next(
+            item
+            for category in overview["categories"]
+            for item in category["toolsets"]
+            if item["namespace"] == "quality_docs"
+        )
+        assert summary["quality"]["grade"] == "excellent"
+        assert summary["capability_flags"]["supports_batch_composition"] is True
+
+        guide = service.get_toolset_guide("quality_docs")
+        assert guide["error"] is None
+        assert guide["quality"]["grade"] == "excellent"
+        assert guide["toolset"]["capability_flags"]["has_guidance"] is True
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_lazy_guidance_and_examples_are_explicit_and_path_bounded(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    guidance_path = tmp_path / "docs" / "docs-helper.md"
+    guidance_path.parent.mkdir(parents=True, exist_ok=True)
+    guidance_path.write_text(
+        "PRIVATE_FILE_GUIDANCE_BODY: detailed release checklist guidance.",
+        encoding="utf-8",
+    )
+
+    try:
+        registration = await service.register_toolset(
+            namespace="docs_helper",
+            title="Documentation Helper",
+            description="Search project documentation and summarize relevant guidance.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+                "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                "cwd": str(tmp_path),
+            },
+            tags=["docs", "release"],
+            category="docs",
+            aliases=["documentation search"],
+            activation_hint="Activate when the task asks for repo-local documentation.",
+            cost_hint="low",
+            latency_hint="low",
+            trust_hint="local",
+            guidance_sources=[
+                {
+                    "kind": "inline",
+                    "title": "Quick Usage",
+                    "summary": "Use for release documentation tasks.",
+                    "content": "PRIVATE_INLINE_GUIDANCE_BODY: load docs, then summarize.",
+                },
+                {
+                    "kind": "file",
+                    "title": "Detailed Usage",
+                    "summary": "Long release checklist guidance.",
+                    "path": "docs/docs-helper.md",
+                },
+            ],
+            composition_examples=[
+                {
+                    "id": "release_check",
+                    "title": "Release Check",
+                    "summary": "Batch the release documentation workflow.",
+                    "kind": "batch",
+                    "tags": ["release"],
+                    "required_namespaces": ["docs_helper"],
+                    "payload": {"private": "PRIVATE_EXAMPLE_PAYLOAD"},
+                }
+            ],
+        )
+        assert registration["error"] is None
+
+        search = service.search_toolsets("release documentation")
+        overview = service.toolbox_overview()
+        listing = service.list_toolsets()
+        guide = service.get_toolset_guide("docs_helper")
+        default_payload = json.dumps(
+            {"search": search, "overview": overview, "listing": listing, "guide": guide},
+            sort_keys=True,
+        )
+        assert "PRIVATE_INLINE_GUIDANCE_BODY" not in default_payload
+        assert "PRIVATE_FILE_GUIDANCE_BODY" not in default_payload
+        assert "PRIVATE_EXAMPLE_PAYLOAD" not in default_payload
+        assert guide["guidance_available"] is True
+        assert guide["composition_examples"][0]["id"] == "release_check"
+        assert "payload" not in guide["composition_examples"][0]
+
+        guidance = service.load_toolset_guidance("docs_helper")
+        assert guidance["error"] is None
+        guidance_blob = json.dumps(guidance, sort_keys=True)
+        assert "PRIVATE_INLINE_GUIDANCE_BODY" in guidance_blob
+        assert "PRIVATE_FILE_GUIDANCE_BODY" in guidance_blob
+
+        examples = service.list_toolset_examples("docs_helper")
+        assert examples["error"] is None
+        assert examples["examples"][0]["id"] == "release_check"
+        assert "payload" not in examples["examples"][0]
+
+        example_detail = service.load_toolset_example("docs_helper", "release_check")
+        assert example_detail["error"] is None
+        assert example_detail["example"]["payload"]["private"] == "PRIVATE_EXAMPLE_PAYLOAD"
+
+        blocked_registration = await service.register_toolset(
+            namespace="blocked_guidance",
+            title="Blocked Guidance",
+            description="A toolset with a protected guidance path.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+                "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                "cwd": str(tmp_path),
+            },
+            guidance_sources=[
+                {
+                    "kind": "file",
+                    "title": "State File",
+                    "summary": "This should never load.",
+                    "path": ".toolbox/state.json",
+                }
+            ],
+        )
+        assert blocked_registration["error"] is None
+
+        blocked = service.load_toolset_guidance("blocked_guidance")
+        assert blocked["guidance"] == []
+        assert blocked["error"]["code"] == "forbidden_guidance_path"
+
+        outside_path = tmp_path.parent / f"{tmp_path.name}_outside_guidance.md"
+        outside_path.write_text("outside workspace guidance", encoding="utf-8")
+        outside_registration = await service.register_toolset(
+            namespace="outside_guidance",
+            title="Outside Guidance",
+            description="A toolset with a guidance path outside its workspace.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+                "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                "cwd": str(tmp_path),
+            },
+            guidance_sources=[
+                {
+                    "kind": "file",
+                    "title": "Outside File",
+                    "summary": "This should never load either.",
+                    "path": str(outside_path),
+                }
+            ],
+        )
+        assert outside_registration["error"] is None
+
+        outside = service.load_toolset_guidance("outside_guidance")
+        assert outside["guidance"] == []
+        assert outside["error"]["code"] == "guidance_path_outside_root"
+
+        duplicate_example = await service.register_toolset(
+            namespace="duplicate_example",
+            title="Duplicate Example",
+            description="A toolset with ambiguous example ids.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+                "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                "cwd": str(tmp_path),
+            },
+            composition_examples=[
+                {"id": "same", "title": "First", "kind": "batch", "payload": {}},
+                {"id": "same", "title": "Second", "kind": "program", "payload": {}},
+            ],
+        )
+        assert duplicate_example["registered"] is None
+        assert duplicate_example["error"]["code"] == "invalid_scope_policy"
+        assert "duplicate composition example id" in duplicate_example["error"]["details"]["validation_error"]
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_inspect_cached_contracts_returns_summary_without_reactivation(tmp_path: Path) -> None:
     state_path = tmp_path / ".toolbox" / "state.json"
     service = create_service(tmp_path)
@@ -2360,6 +2677,10 @@ async def test_server_exposes_agent_facing_overview_and_suggestions(tmp_path: Pa
             assert "plan_toolset_activation" in initial_tool_names
             assert "get_toolset_guide" in initial_tool_names
             assert "audit_toolbox_catalog" in initial_tool_names
+            assert "inspect_toolset_quality" in initial_tool_names
+            assert "list_toolset_examples" in initial_tool_names
+            assert "load_toolset_example" in initial_tool_names
+            assert "load_toolset_guidance" in initial_tool_names
 
             registration = await client.call_tool(
                 "register_toolset",
@@ -2382,10 +2703,32 @@ async def test_server_exposes_agent_facing_overview_and_suggestions(tmp_path: Pa
                     "cost_hint": "low",
                     "latency_hint": "low",
                     "trust_hint": "local",
+                    "future_capabilities": {"supports_tasks": True},
+                    "guidance_sources": [
+                        {
+                            "kind": "inline",
+                            "title": "Skill Loading Guide",
+                            "summary": "How to load only the matching skill.",
+                            "content": "PRIVATE_SERVER_GUIDANCE_BODY",
+                        }
+                    ],
+                    "composition_examples": [
+                        {
+                            "id": "load_skill",
+                            "title": "Load Skill",
+                            "summary": "Example for loading a selected skill.",
+                            "kind": "program",
+                            "tags": ["skills"],
+                            "required_namespaces": ["skills_loader"],
+                            "payload": {"program": "result = {'loaded': True}"},
+                        }
+                    ],
                 },
             )
             registration_payload = parse_result_payload(registration)
             assert registration_payload["error"] is None
+            assert registration_payload["registered"]["guidance_available"] is True
+            assert "payload" not in registration_payload["registered"]["composition_examples"][0]
 
             overview = await client.call_tool("toolbox_overview", {})
             overview_payload = parse_result_payload(overview)
@@ -2425,6 +2768,34 @@ async def test_server_exposes_agent_facing_overview_and_suggestions(tmp_path: Pa
             assert guide_payload["recipes"] == [
                 "Load the skill first, then follow its procedural guidance."
             ]
+            assert guide_payload["guidance_available"] is True
+            assert guide_payload["composition_examples"][0]["id"] == "load_skill"
+            assert "PRIVATE_SERVER_GUIDANCE_BODY" not in json.dumps(guide_payload, sort_keys=True)
+
+            quality = await client.call_tool("inspect_toolset_quality", {"namespaces": ["skills_loader"]})
+            quality_payload = parse_result_payload(quality)
+            assert quality_payload["error"] is None
+            assert quality_payload["quality"][0]["capability_flags"]["has_guidance"] is True
+            assert quality_payload["quality"][0]["capability_flags"]["has_future_task_metadata"] is True
+
+            examples = await client.call_tool("list_toolset_examples", {"namespace": "skills_loader"})
+            examples_payload = parse_result_payload(examples)
+            assert examples_payload["error"] is None
+            assert examples_payload["examples"][0]["id"] == "load_skill"
+            assert "payload" not in examples_payload["examples"][0]
+
+            example = await client.call_tool(
+                "load_toolset_example",
+                {"namespace": "skills_loader", "example_id": "load_skill"},
+            )
+            example_payload = parse_result_payload(example)
+            assert example_payload["error"] is None
+            assert example_payload["example"]["payload"]["program"] == "result = {'loaded': True}"
+
+            guidance = await client.call_tool("load_toolset_guidance", {"namespace": "skills_loader"})
+            guidance_payload = parse_result_payload(guidance)
+            assert guidance_payload["error"] is None
+            assert guidance_payload["guidance"][0]["content"] == "PRIVATE_SERVER_GUIDANCE_BODY"
 
             catalog = await client.call_tool("audit_toolbox_catalog", {})
             catalog_payload = parse_result_payload(catalog)
