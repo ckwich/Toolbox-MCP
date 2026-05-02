@@ -162,6 +162,49 @@ def create_server(
 
     @server.tool(
         description=(
+            "Validate a workspace-local Toolbox catalog pack without changing state. "
+            "Use this before importing declarative toolset registrations."
+        )
+    )
+    def validate_catalog_pack(path: str) -> dict[str, object]:
+        return service.validate_catalog_pack(path=path)
+
+    @server.tool(
+        description=(
+            "Import a workspace-local Toolbox catalog pack into the registry. "
+            "Use dry_run first to preview create/update actions."
+        )
+    )
+    async def import_catalog_pack(
+        path: str,
+        update_existing: bool = True,
+        dry_run: bool = False,
+    ) -> dict[str, object]:
+        return await service.import_catalog_pack(
+            path=path,
+            update_existing=update_existing,
+            dry_run=dry_run,
+        )
+
+    @server.tool(
+        description=(
+            "Check whether registered toolsets are ready for agents: metadata, required env names, "
+            "cached contract, and optional stdio boot/list-tools probe without auto-activating inactive toolsets."
+        )
+    )
+    async def check_toolset_readiness(
+        namespaces: list[str] | None = None,
+        probe: bool = True,
+        refresh_cache: bool = False,
+    ) -> dict[str, object]:
+        return await service.check_toolset_readiness(
+            namespaces=namespaces,
+            probe=probe,
+            refresh_cache=refresh_cache,
+        )
+
+    @server.tool(
+        description=(
             "Inspect compact quality intelligence for registered toolsets: derived capability flags, "
             "quality grade, gaps, and recommended remediation without activating downstream servers."
         )
@@ -304,6 +347,7 @@ def create_server(
         restore_requires_identity: bool = True,
         restore_requires_explicit_request: bool = True,
         auth_required: bool = False,
+        required_env: list[str] | None = None,
     ) -> dict[str, object]:
         return await service.register_toolset(
             namespace=namespace,
@@ -328,6 +372,7 @@ def create_server(
             restore_requires_identity=restore_requires_identity,
             restore_requires_explicit_request=restore_requires_explicit_request,
             auth_required=auth_required,
+            required_env=required_env,
         )
 
     @server.tool(description="Activate one or more toolsets for a given scope.")

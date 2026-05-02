@@ -12,9 +12,11 @@ This first implementation focuses on a narrow end-to-end loop:
 - JSON-backed registry and schema cache
 - metadata-first discovery tools
 - control-plane registration management via `register_toolset` and `unregister_toolsets`
+- declarative catalog-pack validation/import via `validate_catalog_pack` and `import_catalog_pack`
 - agent-facing discovery via `toolbox_brief`, `toolbox_overview`, `suggest_toolsets_for_task`,
   `plan_toolset_activation`, `get_toolset_guide`, and `audit_toolbox_catalog`
 - derived toolset quality intelligence via `inspect_toolset_quality`
+- readiness checks via `check_toolset_readiness`
 - lazy guidance and composition-example loading via `load_toolset_guidance`,
   `list_toolset_examples`, and `load_toolset_example`
 - scoped activation, live mounting, refresh, and deactivation
@@ -68,6 +70,17 @@ without dumping raw downstream schemas.
 hard for agents to discover or use. It is intended for improving the catalog itself, not
 for normal task execution.
 
+`validate_catalog_pack` and `import_catalog_pack` let agents seed the catalog from a
+workspace-local JSON pack instead of hand-writing large `register_toolset` calls. Pack
+imports reuse the normal registration model, keep transport values redacted, skip active
+toolset updates, and preserve cached contract metadata when an inactive update keeps the
+same transport.
+
+`check_toolset_readiness` proves whether registered toolsets are ready before an agent
+depends on them. It reports metadata quality, required environment variable names, cached
+contract status, and optional stdio boot/list-tools health. Inactive toolsets are probed
+with a temporary runtime and are not mounted by the check.
+
 `inspect_toolset_quality` derives compact `capability_flags` and `quality` summaries from
 registration metadata, cached contracts, mounted state, health/stale posture, auth/workspace
 assumptions, and composition readiness. Agents can use it to prefer well-described,
@@ -90,6 +103,45 @@ Toolset registrations now support agent-facing metadata fields:
 - `future_capabilities`: inert protocol-shaped metadata for tasks, triggers, streaming, and reference results
 - `guidance_sources`: inline, registered, or workspace-bounded file guidance loaded only on request
 - `composition_examples`: batch or program examples listed compactly and loaded explicitly by id
+- `required_env`: environment variable names needed by the toolset; values are never returned
+
+Catalog packs use the same metadata shape under a `toolsets` array:
+
+```json
+{
+  "version": 1,
+  "name": "local-dev-toolsets",
+  "description": "Developer MCP toolsets for this workspace.",
+  "toolsets": [
+    {
+      "namespace": "example_docs",
+      "title": "Example Docs",
+      "description": "Search example project documentation.",
+      "transport": {
+        "kind": "stdio",
+        "command": "python",
+        "args": ["-m", "example.docs_server"],
+        "cwd": "C:/Dev/Example"
+      },
+      "category": "docs",
+      "tags": ["docs"],
+      "required_env": ["EXAMPLE_API_KEY"],
+      "activation_hint": "Activate when the task needs Example project documentation.",
+      "cost_hint": "low",
+      "latency_hint": "low",
+      "trust_hint": "local"
+    }
+  ]
+}
+```
+
+Recommended agent flow for packs:
+
+1. Call `validate_catalog_pack(path)`.
+2. Call `import_catalog_pack(path, dry_run=true)` to preview create/update actions.
+3. Call `import_catalog_pack(path)` once the preview is correct.
+4. Call `check_toolset_readiness(namespaces=[...], probe=true, refresh_cache=true)`.
+5. Continue through `toolbox_brief`, `suggest_toolsets_for_task`, and `plan_toolset_activation`.
 
 `run_tool_batch` provides a first step toward programmatic tool calling. It lets one
 Toolbox call execute multiple mounted tool calls and pass data from earlier steps into
@@ -336,6 +388,9 @@ The current agent-facing discovery surface is:
 - `plan_toolset_activation`: dry-run which toolsets should be mounted for a task and scope
 - `get_toolset_guide`: load compact recipes and next actions for one selected toolset
 - `audit_toolbox_catalog`: identify registrations with thin agent-facing metadata
+- `validate_catalog_pack`: validate a workspace-local catalog pack without changing state
+- `import_catalog_pack`: import or dry-run catalog-pack registrations
+- `check_toolset_readiness`: prove metadata/env/cache/boot readiness without auto-activation
 - `inspect_toolset_quality`: inspect derived flags, quality grades, gaps, and next-action hints
 - `load_toolset_guidance`: explicitly load guidance bodies for one selected toolset
 - `list_toolset_examples`: list composition examples for one selected toolset without payloads

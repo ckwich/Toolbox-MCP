@@ -8,6 +8,8 @@ activation. The core v1 roadmap and a post-v1 polish pass are complete.
 Today the repo includes:
 
 - registration, activation, refresh, deactivation, and unregistration of managed stdio toolsets
+- declarative workspace-local catalog-pack validation and import
+- readiness checks for metadata, required env names, cached contracts, and stdio boot/list-tools probes
 - mounted downstream tools under `namespace.tool`
 - cached and mounted contract inspection plus diffing
 - scoped activation semantics across `thread`, `session`, and `global`
@@ -31,6 +33,9 @@ Today the repo includes:
    `python -m toolbox.server`
 5. In your MCP host, call `toolbox_brief` first to orient, then follow
    [docs/quickstart.md](docs/quickstart.md) to exercise the seeded `fake_stdio` toolset.
+6. To seed real toolsets, create a workspace-local catalog pack, call
+   `validate_catalog_pack`, preview with `import_catalog_pack(..., dry_run=true)`,
+   import it, then call `check_toolset_readiness(..., probe=true, refresh_cache=true)`.
 
 ## Key Docs
 
@@ -77,11 +82,13 @@ The finished milestone intentionally stopped short of:
 
 ## Next Planned Session
 
-Phase 9 is planned but not implemented.
+Phase 9 and the first Phase 10 slice are implemented.
 
 - Start here: [.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md](.planning/phases/09-toolset-quality-intelligence/09-CONTEXT.md)
-- First slice: `09-01` derived capability flags and quality summaries
-- Second slice: `09-02` lazy guidance-source indexing and composition examples
+- Phase 9 added derived capability flags, quality summaries, lazy guidance loading, and explicit example payload loading.
+- Phase 10 added catalog-pack validation/import and readiness checks.
+- Phase 10 spec: [docs/superpowers/specs/2026-05-01-catalog-packs-readiness-harness-design.md](docs/superpowers/specs/2026-05-01-catalog-packs-readiness-harness-design.md)
+- Phase 10 plan: [docs/superpowers/plans/2026-05-01-catalog-packs-readiness-harness.md](docs/superpowers/plans/2026-05-01-catalog-packs-readiness-harness.md)
 
 The right posture is still deliberate and test-first: do not reopen completed Phase 7/8
 discovery work ad hoc, and do not implement speculative tasks/triggers/streaming behavior

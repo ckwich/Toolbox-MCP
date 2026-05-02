@@ -195,6 +195,49 @@ class ToolsetQualityInspectionResult(BaseModel):
     missing: list[ErrorInfo] = Field(default_factory=list)
 
 
+class CatalogPackToolset(BaseModel):
+    namespace: str
+    title: str
+    description: str
+    transport: ToolsetTransport
+    tags: list[str] = Field(default_factory=list)
+    category: str = "general"
+    aliases: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    recipes: list[str] = Field(default_factory=list)
+    activation_hint: str | None = None
+    cost_hint: str | None = None
+    latency_hint: str | None = None
+    trust_hint: str = "unknown"
+    future_capabilities: ToolsetFutureCapabilities = Field(default_factory=ToolsetFutureCapabilities)
+    guidance_sources: list[ToolsetGuidanceSource] = Field(default_factory=list)
+    composition_examples: list[ToolsetCompositionExample] = Field(default_factory=list)
+    default_scope: Scope = Scope.THREAD
+    supported_scopes: list[Scope] = Field(default_factory=lambda: list(Scope))
+    restorable_scopes: list[Scope] = Field(default_factory=list)
+    restore_requires_identity: bool = True
+    restore_requires_explicit_request: bool = True
+    auth_required: bool = False
+    required_env: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_metadata(self) -> CatalogPackToolset:
+        self.tags = _dedupe_clean_strings(self.tags)
+        self.aliases = _dedupe_clean_strings(self.aliases)
+        self.examples = _dedupe_clean_strings(self.examples)
+        self.recipes = _dedupe_clean_strings(self.recipes)
+        self.required_env = _dedupe_clean_strings(self.required_env)
+        self.category = self.category.strip().lower().replace(" ", "_") or "general"
+        return self
+
+
+class CatalogPack(BaseModel):
+    version: int = 1
+    name: str
+    description: str | None = None
+    toolsets: list[CatalogPackToolset] = Field(default_factory=list)
+
+
 class ToolsetExampleListResult(BaseModel):
     namespace: str
     count: int
@@ -248,6 +291,7 @@ class ToolsetRecord(BaseModel):
     last_health_error: ErrorInfo | None = None
     last_error: ErrorInfo | None = None
     auth_required: bool = False
+    required_env: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_scope_policy(self) -> ToolsetRecord:
@@ -256,6 +300,7 @@ class ToolsetRecord(BaseModel):
         self.recoverable_scopes = _ordered_unique_scopes(self.recoverable_scopes)
         self.loaded_scopes = _ordered_unique_scopes(self.loaded_scopes)
         self.category = self.category.strip().lower().replace(" ", "_") or "general"
+        self.required_env = _dedupe_clean_strings(self.required_env)
         seen_example_ids: set[str] = set()
         for source in self.guidance_sources:
             source.title = source.title.strip()

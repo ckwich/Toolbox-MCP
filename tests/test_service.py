@@ -23,6 +23,30 @@ def write_manifest(path: Path, tools: list[dict]) -> None:
     path.write_text(json.dumps({"tools": tools}, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def write_catalog_pack(
+    path: Path,
+    toolsets: list[dict],
+    *,
+    version: int = 1,
+    name: str = "test-pack",
+    description: str = "Test catalog pack.",
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "version": version,
+                "name": name,
+                "description": description,
+                "toolsets": toolsets,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
 def create_service(
     tmp_path: Path,
     *,
@@ -91,6 +115,368 @@ async def test_activate_fake_toolset_persists_schema_and_scope(tmp_path: Path) -
         assert status["toolsets"][0]["schema"]["schema_hash"].startswith("sha256:")
     finally:
         await service.shutdown()
+
+
+def test_catalog_pack_validation_reports_valid_and_invalid_manifests(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    pack_path = tmp_path / "packs" / "valid-pack.json"
+    write_catalog_pack(
+        pack_path,
+        [
+            {
+                "namespace": "pack_docs",
+                "title": "Pack Docs",
+                "description": "Search documentation from a catalog pack.",
+                "transport": {
+                    "kind": "stdio",
+                    "command": sys.executable,
+                    "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+                    "cwd": str(tmp_path),
+                },
+                "category": "docs",
+                "tags": ["docs"],
+                "required_env": ["PACK_DOCS_TOKEN"],
+                "activation_hint": "Activate when documentation search is needed.",
+                "cost_hint": "low",
+                "latency_hint": "low",
+                "trust_hint": "local",
+            }
+        ],
+    )
+
+    valid = service.validate_catalog_pack(str(pack_path))
+
+    assert valid["error"] is None
+    assert valid["valid"] is True
+    assert valid["pack"]["name"] == "test-pack"
+    assert valid["pack"]["toolset_count"] == 1
+    assert valid["toolsets"][0]["namespace"] == "pack_docs"
+    assert valid["toolsets"][0]["required_env"] == ["PACK_DOCS_TOKEN"]
+    assert valid["errors"] == []
+
+    duplicate_path = tmp_path / "packs" / "duplicate-pack.json"
+    write_catalog_pack(
+        duplicate_path,
+        [
+            {
+                "namespace": "dupe_docs",
+                "title": "Dupe Docs",
+                "description": "First duplicate.",
+                "transport": {"kind": "stdio", "command": sys.executable},
+            },
+            {
+                "namespace": "dupe_docs",
+                "title": "Dupe Docs Again",
+                "description": "Second duplicate.",
+                "transport": {"kind": "stdio", "command": sys.executable},
+            },
+        ],
+    )
+
+    duplicate = service.validate_catalog_pack(str(duplicate_path))
+
+    assert duplicate["valid"] is False
+    assert duplicate["errors"][0]["code"] == "duplicate_catalog_pack_namespace"
+    assert duplicate["errors"][0]["namespace"] == "dupe_docs"
+
+    unsupported_path = tmp_path / "packs" / "unsupported-pack.json"
+    write_catalog_pack(unsupported_path, [], version=99)
+
+    unsupported = service.validate_catalog_pack(str(unsupported_path))
+
+    assert unsupported["valid"] is False
+    assert unsupported["errors"][0]["code"] == "unsupported_catalog_pack_version"
+
+
+def test_catalog_pack_validation_errors_do_not_echo_transport_secrets(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    pack_path = tmp_path / "packs" / "invalid-secret-pack.json"
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    pack_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "name": "invalid-secret-pack",
+                "toolsets": [
+                    {
+                        "namespace": "secret_pack",
+                        "description": "Missing title should fail validation.",
+                        "transport": {
+                            "kind": "stdio",
+                            "command": sys.executable,
+                            "args": ["--token", "pack-secret-token"],
+                            "env": {"API_TOKEN": ["pack-secret-token"]},
+                        },
+                    }
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    validation = service.validate_catalog_pack(str(pack_path))
+
+    assert validation["valid"] is False
+    assert validation["errors"][0]["code"] == "invalid_catalog_pack"
+    assert "pack-secret-token" not in json.dumps(validation)
+
+
+@pytest.mark.asyncio
+async def test_catalog_pack_import_supports_dry_run_create_skip_and_update(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    pack_path = tmp_path / "packs" / "docs-pack.json"
+    base_toolset = {
+        "namespace": "pack_docs",
+        "title": "Pack Docs",
+        "description": "Search documentation from a catalog pack.",
+        "transport": {
+            "kind": "stdio",
+            "command": sys.executable,
+            "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+            "env": {"PACK_DOCS_TOKEN": "super-secret-token"},
+            "cwd": str(tmp_path),
+        },
+        "category": "docs",
+        "tags": ["docs"],
+        "aliases": ["catalog docs"],
+        "required_env": ["PACK_DOCS_TOKEN"],
+        "examples": ["Find documentation through an imported pack."],
+        "activation_hint": "Activate when documentation search is needed.",
+        "cost_hint": "low",
+        "latency_hint": "low",
+        "trust_hint": "local",
+    }
+    write_catalog_pack(pack_path, [base_toolset])
+
+    dry_run = await service.import_catalog_pack(str(pack_path), dry_run=True)
+
+    assert dry_run["error"] is None
+    assert dry_run["would_import"] == [{"namespace": "pack_docs", "action": "create"}]
+    assert service.store.get_toolset("pack_docs") is None
+
+    imported = await service.import_catalog_pack(str(pack_path))
+
+    assert imported["error"] is None
+    assert imported["imported"][0]["namespace"] == "pack_docs"
+    assert imported["updated"] == []
+    assert "super-secret-token" not in json.dumps(imported)
+
+    readiness = await service.check_toolset_readiness(["pack_docs"], refresh_cache=True)
+    cached_hash = readiness["readiness"][0]["cache"]["schema_hash"]
+    assert cached_hash.startswith("sha256:")
+
+    skipped = await service.import_catalog_pack(str(pack_path), update_existing=False)
+
+    assert skipped["skipped"] == [{"namespace": "pack_docs", "reason": "already_registered"}]
+
+    updated_toolset = dict(base_toolset)
+    updated_toolset["title"] = "Updated Pack Docs"
+    updated_toolset["tags"] = ["docs", "updated"]
+    write_catalog_pack(pack_path, [updated_toolset])
+
+    updated = await service.import_catalog_pack(str(pack_path), update_existing=True)
+
+    assert updated["updated"][0]["namespace"] == "pack_docs"
+    assert service.store.get_toolset("pack_docs").title == "Updated Pack Docs"
+    assert service.store.get_toolset("pack_docs").tags == ["docs", "updated"]
+    assert service.get_toolset_status(["pack_docs"])["toolsets"][0]["schema"]["schema_hash"] == cached_hash
+    assert "super-secret-token" not in json.dumps(service.get_toolset_status(["pack_docs"]))
+
+
+@pytest.mark.asyncio
+async def test_catalog_pack_import_skips_active_toolset_updates(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    pack_path = tmp_path / "packs" / "active-pack.json"
+    write_catalog_pack(
+        pack_path,
+        [
+            {
+                "namespace": "fake_stdio",
+                "title": "Updated Active Fake",
+                "description": "Would replace an active runtime registration.",
+                "transport": {
+                    "kind": "stdio",
+                    "command": sys.executable,
+                    "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+                    "cwd": str(tmp_path),
+                },
+            }
+        ],
+    )
+
+    try:
+        activation = await service.activate_toolsets(["fake_stdio"], scope="thread")
+        assert activation["failed"] == []
+
+        imported = await service.import_catalog_pack(str(pack_path), update_existing=True)
+
+        assert imported["updated"] == []
+        assert imported["skipped"] == [{"namespace": "fake_stdio", "reason": "toolset_active"}]
+        assert service.store.get_toolset("fake_stdio").title == "Fake Managed Stdio Toolset"
+        assert service.transport_manager.runtime_for("fake_stdio") is not None
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_required_env_metadata_is_visible_without_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = create_service(tmp_path)
+    secret_name = "TOOLBOX_PHASE10_SECRET"
+    monkeypatch.setenv(secret_name, "do-not-leak")
+    pack_path = tmp_path / "packs" / "env-pack.json"
+    write_catalog_pack(
+        pack_path,
+        [
+            {
+                "namespace": "env_docs",
+                "title": "Env Docs",
+                "description": "Requires a host env var.",
+                "transport": {
+                    "kind": "stdio",
+                    "command": sys.executable,
+                    "args": ["-m", "toolbox.fake_managed_server", "--manifest", str(service.fake_manifest_path)],
+                    "cwd": str(tmp_path),
+                },
+                "required_env": [secret_name],
+                "auth_required": True,
+                "category": "docs",
+            }
+        ],
+    )
+
+    await service.import_catalog_pack(str(pack_path))
+
+    listing = service.list_toolsets()
+    listed = next(item for item in listing["toolsets"] if item["namespace"] == "env_docs")
+    assert listed["required_env"] == [secret_name]
+    assert "do-not-leak" not in json.dumps(listing)
+
+    status = service.get_toolset_status(["env_docs"])
+    assert status["toolsets"][0]["registration"]["required_env"] == [secret_name]
+    assert "do-not-leak" not in json.dumps(status)
+
+    monkeypatch.delenv(secret_name, raising=False)
+    readiness = await service.check_toolset_readiness(["env_docs"], probe=False)
+    env_check = readiness["readiness"][0]["env"]
+
+    assert env_check["required"] == [secret_name]
+    assert env_check["missing"] == [secret_name]
+    assert "do-not-leak" not in json.dumps(readiness)
+
+
+@pytest.mark.asyncio
+async def test_readiness_probes_inactive_toolset_without_mounting_and_can_refresh_cache(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+
+    try:
+        readiness = await service.check_toolset_readiness(
+            ["fake_stdio"],
+            probe=True,
+            refresh_cache=True,
+        )
+
+        assert readiness["error"] is None
+        assert readiness["count"] == 1
+        result = readiness["readiness"][0]
+        assert result["namespace"] == "fake_stdio"
+        assert result["status"] == "ready"
+        assert result["boot"]["checked"] is True
+        assert result["boot"]["ok"] is True
+        assert result["boot"]["mode"] == "temporary"
+        assert result["boot"]["observed_tool_count"] == 1
+        assert result["cache"]["cached"] is True
+        assert result["cache"]["updated"] is True
+        assert result["activation"]["loaded_scopes"] == []
+
+        status = service.get_toolset_status(["fake_stdio"])
+        assert status["toolsets"][0]["activation"]["loaded_scopes"] == []
+        assert service.transport_manager.runtime_for("fake_stdio") is None
+        assert service.store.get_schema_snapshot("fake_stdio") is not None
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_readiness_probes_active_toolset_with_existing_runtime(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+
+    try:
+        activation = await service.activate_toolsets(["fake_stdio"], scope="thread")
+        assert activation["failed"] == []
+
+        readiness = await service.check_toolset_readiness(["fake_stdio"], probe=True)
+
+        result = readiness["readiness"][0]
+        assert result["status"] == "ready"
+        assert result["boot"]["checked"] is True
+        assert result["boot"]["ok"] is True
+        assert result["boot"]["mode"] == "active_runtime"
+        assert result["activation"]["loaded_scopes"] == ["thread"]
+        assert service.transport_manager.runtime_for("fake_stdio") is not None
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_readiness_probe_errors_do_not_echo_transport_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = create_service(tmp_path)
+    pack_path = tmp_path / "packs" / "readiness-secret-pack.json"
+    write_catalog_pack(
+        pack_path,
+        [
+            {
+                "namespace": "readiness_secret",
+                "title": "Readiness Secret",
+                "description": "A toolset whose probe failure must not echo transport secrets.",
+                "transport": {
+                    "kind": "stdio",
+                    "command": sys.executable,
+                    "args": ["--token", "readiness-arg-secret"],
+                    "env": {"API_TOKEN": "readiness-env-secret"},
+                    "cwd": str(tmp_path),
+                },
+            }
+        ],
+    )
+    await service.import_catalog_pack(str(pack_path))
+
+    async def fail_open_runtime(record):
+        raise RuntimeError(
+            f"failed for {record.transport.args[-1]} with {record.transport.env['API_TOKEN']}"
+        )
+
+    monkeypatch.setattr(service.transport_manager, "open_runtime", fail_open_runtime)
+
+    readiness = await service.check_toolset_readiness(["readiness_secret"], probe=True)
+
+    error_json = json.dumps(readiness)
+    assert readiness["readiness"][0]["status"] == "failed"
+    assert "readiness-arg-secret" not in error_json
+    assert "readiness-env-secret" not in error_json
+    assert "[redacted]" in error_json
+
+
+@pytest.mark.asyncio
+async def test_server_exposes_catalog_pack_and_readiness_tools(tmp_path: Path) -> None:
+    state_path = tmp_path / ".toolbox" / "state.json"
+    server = create_server(state_path=state_path)
+
+    try:
+        async with create_connected_server_and_client_session(server) as client:
+            tools = await client.list_tools()
+            tool_names = {tool.name for tool in tools.tools}
+
+            assert "validate_catalog_pack" in tool_names
+            assert "import_catalog_pack" in tool_names
+            assert "check_toolset_readiness" in tool_names
+    finally:
+        await shutdown_server(server)
+        del server
 
 
 @pytest.mark.asyncio
@@ -583,6 +969,59 @@ async def test_lazy_guidance_and_examples_are_explicit_and_path_bounded(tmp_path
         assert duplicate_example["registered"] is None
         assert duplicate_example["error"]["code"] == "invalid_scope_policy"
         assert "duplicate composition example id" in duplicate_example["error"]["details"]["validation_error"]
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_register_validation_errors_do_not_echo_transport_secrets(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+
+    try:
+        result = await service.register_toolset(
+            namespace="secret_validation",
+            title="Secret Validation",
+            description="A toolset whose validation error must not echo submitted secrets.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["--token", "register-secret-token"],
+                "env": {"API_TOKEN": "register-secret-token"},
+            },
+            composition_examples=[
+                {"id": "same", "title": "First", "kind": "batch", "payload": {}},
+                {"id": "same", "title": "Second", "kind": "program", "payload": {}},
+            ],
+        )
+
+        assert result["registered"] is None
+        assert result["error"]["code"] == "invalid_scope_policy"
+        assert "duplicate composition example id" in result["error"]["details"]["validation_error"]
+        assert "register-secret-token" not in json.dumps(result)
+    finally:
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_register_invalid_transport_does_not_echo_transport_secrets(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+
+    try:
+        result = await service.register_toolset(
+            namespace="invalid_secret_transport",
+            title="Invalid Secret Transport",
+            description="A malformed transport whose error must not echo submitted secrets.",
+            transport={
+                "kind": "stdio",
+                "command": sys.executable,
+                "args": ["--token", "invalid-transport-secret"],
+                "env": {"API_TOKEN": ["invalid-transport-secret"]},
+            },
+        )
+
+        assert result["registered"] is None
+        assert result["error"]["code"] == "invalid_transport"
+        assert "invalid-transport-secret" not in json.dumps(result)
     finally:
         await service.shutdown()
 

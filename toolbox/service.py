@@ -21,6 +21,8 @@ from toolbox.models import (
     BatchRunResult,
     BatchStep,
     BatchStepResult,
+    CatalogPack,
+    CatalogPackToolset,
     ContractAvailability,
     ContractDiffResult,
     ContractInspectionResult,
@@ -552,6 +554,170 @@ class ToolboxService:
         payload["error"] = None
         return payload
 
+    def validate_catalog_pack(self, path: str) -> dict[str, Any]:
+        pack, errors, top_level_error = self._load_catalog_pack(path)
+        if top_level_error is not None:
+            return {
+                "valid": False,
+                "pack": None,
+                "toolsets": [],
+                "errors": [top_level_error.model_dump(mode="json")],
+                "error": top_level_error.model_dump(mode="json"),
+            }
+        if pack is None:
+            error = self._error_info("invalid_catalog_pack", "Catalog pack could not be loaded.")
+            return {
+                "valid": False,
+                "pack": None,
+                "toolsets": [],
+                "errors": [error.model_dump(mode="json")],
+                "error": error.model_dump(mode="json"),
+            }
+
+        payload = {
+            "valid": not errors,
+            "pack": self._catalog_pack_summary(pack),
+            "toolsets": [self._catalog_pack_toolset_summary(toolset) for toolset in pack.toolsets],
+            "errors": [error.model_dump(mode="json") for error in errors],
+            "error": None,
+        }
+        return payload
+
+    async def import_catalog_pack(
+        self,
+        path: str,
+        *,
+        update_existing: bool = True,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        pack, errors, top_level_error = self._load_catalog_pack(path)
+        if top_level_error is not None:
+            return {
+                "pack": None,
+                "imported": [],
+                "updated": [],
+                "skipped": [],
+                "would_import": [],
+                "failed": [top_level_error.model_dump(mode="json")],
+                "error": top_level_error.model_dump(mode="json"),
+            }
+        if pack is None or errors:
+            first_error = errors[0] if errors else self._error_info("invalid_catalog_pack", "Catalog pack could not be loaded.")
+            return {
+                "pack": self._catalog_pack_summary(pack) if pack is not None else None,
+                "imported": [],
+                "updated": [],
+                "skipped": [],
+                "would_import": [],
+                "failed": [error.model_dump(mode="json") for error in errors] or [first_error.model_dump(mode="json")],
+                "error": first_error.model_dump(mode="json"),
+            }
+
+        imported: list[dict[str, Any]] = []
+        updated: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        would_import: list[dict[str, str]] = []
+        failed: list[dict[str, Any]] = []
+
+        for pack_toolset in pack.toolsets:
+            namespace = pack_toolset.namespace
+            existing = self._get_record(namespace)
+            action = "update" if existing is not None else "create"
+            if existing is not None and not update_existing:
+                skipped.append({"namespace": namespace, "reason": "already_registered"})
+                continue
+
+            if dry_run:
+                would_import.append({"namespace": namespace, "action": action})
+                continue
+
+            async with self._namespace_lock(namespace):
+                current = self._get_record(namespace)
+                if current is not None and current.loaded_scopes:
+                    skipped.append({"namespace": namespace, "reason": "toolset_active"})
+                    continue
+                try:
+                    record = self._record_from_catalog_toolset(pack_toolset)
+                except ValidationError as exc:
+                    error = self._error_info(
+                        "invalid_catalog_pack_toolset",
+                        "Catalog pack toolset is invalid.",
+                        namespace=namespace,
+                        details={"validation_errors": self._safe_validation_errors(exc)},
+                    )
+                    failed.append(error.model_dump(mode="json"))
+                    self._append_audit_event(
+                        operation=AuditOperation.REGISTER,
+                        outcome=AuditOutcome.FAILURE,
+                        namespace=namespace,
+                        error=error,
+                    )
+                    continue
+
+                if current is not None:
+                    if self._same_transport(current, record):
+                        self._preserve_runtime_metadata(record, current)
+                    else:
+                        self.store.delete_schema_snapshot(namespace)
+                        self.store.delete_previous_schema_snapshot(namespace)
+                self.store.upsert_toolset(record)
+                summary = self._registered_toolset_payload(record)
+                if action == "create":
+                    imported.append(summary)
+                else:
+                    updated.append(summary)
+                self._append_audit_event(
+                    operation=AuditOperation.REGISTER,
+                    outcome=AuditOutcome.SUCCESS,
+                    namespace=namespace,
+                    scope=record.default_scope,
+                    details={
+                        "source": "catalog_pack",
+                        "pack": pack.name,
+                        "action": action,
+                        "transport_kind": record.transport.kind,
+                        "auth_required": record.auth_required,
+                        "category": record.category,
+                    },
+                )
+
+        return {
+            "pack": self._catalog_pack_summary(pack),
+            "imported": imported,
+            "updated": updated,
+            "skipped": skipped,
+            "would_import": would_import,
+            "failed": failed,
+            "error": None if not failed else failed[0],
+        }
+
+    async def check_toolset_readiness(
+        self,
+        namespaces: list[str] | None = None,
+        *,
+        probe: bool = True,
+        refresh_cache: bool = False,
+    ) -> dict[str, Any]:
+        selected = namespaces or [record.namespace for record in self._load_all_records()]
+        readiness: list[dict[str, Any]] = []
+        missing: list[dict[str, Any]] = []
+
+        for namespace in selected:
+            async with self._namespace_lock(namespace):
+                record = self._get_record(namespace)
+                if record is None:
+                    error = self._error_info("unknown_toolset", f"Unknown toolset: {namespace}", namespace=namespace)
+                    missing.append(error.model_dump(mode="json"))
+                    continue
+                readiness.append(await self._check_record_readiness(record, probe=probe, refresh_cache=refresh_cache))
+
+        return {
+            "count": len(readiness),
+            "readiness": readiness,
+            "missing": missing,
+            "error": None,
+        }
+
     def plan_toolset_activation(
         self,
         task: str,
@@ -978,6 +1144,7 @@ class ToolboxService:
                     "cost_hint": record.cost_hint,
                     "latency_hint": record.latency_hint,
                     "trust_hint": record.trust_hint,
+                    "required_env": record.required_env,
                     "future_capabilities": record.future_capabilities.model_dump(mode="json"),
                     "guidance_available": self._guidance_available(record),
                     "guidance_sources": [
@@ -1122,7 +1289,10 @@ class ToolboxService:
                 "error": self._error(
                     "invalid_audit_query",
                     "Audit query filters are invalid.",
-                    details={"validation_error": str(exc)},
+                    details={
+                        "validation_error": self._safe_validation_error_message(exc),
+                        "validation_errors": self._safe_validation_errors(exc),
+                    },
                 ),
             }
 
@@ -1571,6 +1741,7 @@ class ToolboxService:
                         "cost_hint": record.cost_hint,
                         "latency_hint": record.latency_hint,
                         "trust_hint": record.trust_hint,
+                        "required_env": record.required_env,
                         "future_capabilities": record.future_capabilities.model_dump(mode="json"),
                         "guidance_available": self._guidance_available(record),
                         "guidance_sources": [
@@ -1634,6 +1805,355 @@ class ToolboxService:
 
         return {"count": len(statuses), "toolsets": statuses, "missing": missing, "error": None}
 
+    def _load_catalog_pack(self, path: str) -> tuple[CatalogPack | None, list[ErrorInfo], ErrorInfo | None]:
+        try:
+            root = self.workspace.resolve()
+            candidate = Path(path)
+            resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
+            resolved.relative_to(root)
+        except (OSError, ValueError) as exc:
+            return (
+                None,
+                [],
+                self._error_info(
+                    "catalog_pack_path_outside_workspace",
+                    "Catalog pack path must stay within the Toolbox workspace.",
+                    details={"path": path, "reason": str(exc)},
+                ),
+            )
+
+        if not resolved.is_file():
+            return (
+                None,
+                [],
+                self._error_info(
+                    "catalog_pack_not_found",
+                    f"Catalog pack file does not exist: {path}",
+                    details={"path": path},
+                ),
+            )
+
+        try:
+            payload = json.loads(resolved.read_text(encoding="utf-8"))
+            pack = CatalogPack.model_validate(payload)
+        except OSError as exc:
+            return (
+                None,
+                [],
+                self._error_info(
+                    "invalid_catalog_pack",
+                    "Catalog pack could not be read.",
+                    details={"path": path, "error": str(exc)},
+                ),
+            )
+        except json.JSONDecodeError as exc:
+            return (
+                None,
+                [],
+                self._error_info(
+                    "invalid_catalog_pack",
+                    "Catalog pack must be valid JSON.",
+                    details={"path": path, "json_error": str(exc)},
+                ),
+            )
+        except ValidationError as exc:
+            return (
+                None,
+                [],
+                self._error_info(
+                    "invalid_catalog_pack",
+                    "Catalog pack must be valid JSON matching the catalog pack schema.",
+                    details={"path": path, "validation_errors": self._safe_validation_errors(exc)},
+                ),
+            )
+
+        errors: list[ErrorInfo] = []
+        if pack.version != 1:
+            errors.append(
+                self._error_info(
+                    "unsupported_catalog_pack_version",
+                    f"Unsupported catalog pack version: {pack.version}",
+                    details={"supported_versions": [1]},
+                )
+            )
+
+        seen: set[str] = set()
+        for toolset in pack.toolsets:
+            if not self._is_valid_namespace(toolset.namespace):
+                errors.append(
+                    self._error_info(
+                        "invalid_namespace",
+                        "Namespaces may only contain letters, numbers, underscores, and hyphens.",
+                        namespace=toolset.namespace or None,
+                    )
+                )
+                continue
+            if toolset.namespace in seen:
+                errors.append(
+                    self._error_info(
+                        "duplicate_catalog_pack_namespace",
+                        f"Catalog pack contains duplicate namespace: {toolset.namespace}",
+                        namespace=toolset.namespace,
+                    )
+                )
+                continue
+            seen.add(toolset.namespace)
+
+        return pack, errors, None
+
+    def _catalog_pack_summary(self, pack: CatalogPack) -> dict[str, Any]:
+        return {
+            "version": pack.version,
+            "name": pack.name,
+            "description": pack.description,
+            "toolset_count": len(pack.toolsets),
+            "namespaces": [toolset.namespace for toolset in pack.toolsets],
+        }
+
+    def _catalog_pack_toolset_summary(self, toolset: CatalogPackToolset) -> dict[str, Any]:
+        return {
+            "namespace": toolset.namespace,
+            "title": toolset.title,
+            "description": toolset.description,
+            "category": toolset.category,
+            "tags": toolset.tags,
+            "aliases": toolset.aliases,
+            "required_env": toolset.required_env,
+            "auth_required": toolset.auth_required,
+            "transport": self._public_transport(toolset.transport),
+        }
+
+    def _record_from_catalog_toolset(self, toolset: CatalogPackToolset) -> ToolsetRecord:
+        return ToolsetRecord.model_validate(
+            {
+                "namespace": toolset.namespace,
+                "title": toolset.title,
+                "description": toolset.description,
+                "tags": self._dedupe_strings(toolset.tags),
+                "category": self._normalize_category(toolset.category),
+                "aliases": self._dedupe_strings(toolset.aliases),
+                "examples": self._dedupe_strings(toolset.examples),
+                "recipes": self._dedupe_strings(toolset.recipes),
+                "activation_hint": self._clean_optional_text(toolset.activation_hint),
+                "cost_hint": self._clean_optional_text(toolset.cost_hint),
+                "latency_hint": self._clean_optional_text(toolset.latency_hint),
+                "trust_hint": self._clean_optional_text(toolset.trust_hint) or "unknown",
+                "future_capabilities": toolset.future_capabilities.model_dump(mode="python"),
+                "guidance_sources": [source.model_dump(mode="python") for source in toolset.guidance_sources],
+                "composition_examples": [
+                    example.model_dump(mode="python") for example in toolset.composition_examples
+                ],
+                "transport": toolset.transport.model_dump(mode="python"),
+                "default_scope": toolset.default_scope,
+                "supported_scopes": toolset.supported_scopes,
+                "restorable_scopes": toolset.restorable_scopes,
+                "restore_requires_identity": toolset.restore_requires_identity,
+                "restore_requires_explicit_request": toolset.restore_requires_explicit_request,
+                "auth_required": toolset.auth_required,
+                "required_env": self._dedupe_strings(toolset.required_env),
+            }
+        )
+
+    def _registered_toolset_payload(self, record: ToolsetRecord) -> dict[str, Any]:
+        return {
+            "namespace": record.namespace,
+            "title": record.title,
+            "description": record.description,
+            "category": record.category,
+            "tags": record.tags,
+            "aliases": record.aliases,
+            "examples": record.examples,
+            "recipes": record.recipes,
+            "activation_hint": record.activation_hint,
+            "cost_hint": record.cost_hint,
+            "latency_hint": record.latency_hint,
+            "trust_hint": record.trust_hint,
+            "required_env": record.required_env,
+            "future_capabilities": record.future_capabilities.model_dump(mode="json"),
+            "guidance_available": self._guidance_available(record),
+            "guidance_sources": [
+                source.model_dump(mode="json") for source in self._guidance_source_summaries(record)
+            ],
+            "composition_examples": [
+                example.model_dump(mode="json") for example in self._composition_example_summaries(record)
+            ],
+            "capability_flags": self._toolset_capability_flags(record).model_dump(mode="json"),
+            "quality": self._toolset_quality_summary(record).model_dump(mode="json"),
+            "transport": self._public_transport(record.transport),
+            "default_scope": record.default_scope.value,
+            "scope_policy": self._scope_policy(record),
+            "auth_required": record.auth_required,
+        }
+
+    @staticmethod
+    def _same_transport(left: ToolsetRecord, right: ToolsetRecord) -> bool:
+        return left.transport.model_dump(mode="python") == right.transport.model_dump(mode="python")
+
+    @staticmethod
+    def _safe_validation_errors(exc: ValidationError) -> list[dict[str, Any]]:
+        return [
+            {
+                "loc": [str(part) for part in error.get("loc", [])],
+                "msg": str(error.get("msg", "")),
+                "type": str(error.get("type", "")),
+            }
+            for error in exc.errors(include_input=False)
+        ]
+
+    @classmethod
+    def _safe_validation_error_message(cls, exc: ValidationError) -> str:
+        messages: list[str] = []
+        for error in cls._safe_validation_errors(exc):
+            loc = ".".join(error["loc"])
+            prefix = f"{loc}: " if loc else ""
+            messages.append(f"{prefix}{error['msg']}")
+        return "; ".join(messages)
+
+    @staticmethod
+    def _preserve_runtime_metadata(target: ToolsetRecord, source: ToolsetRecord) -> None:
+        target.loaded_scopes = list(source.loaded_scopes)
+        target.recoverable_scopes = list(source.recoverable_scopes)
+        target.transport_state = source.transport_state
+        target.stale = source.stale
+        target.stale_reason = source.stale_reason
+        target.schema_hash = source.schema_hash
+        target.previous_schema_hash = source.previous_schema_hash
+        target.tool_count = source.tool_count
+        target.last_activated_at = source.last_activated_at
+        target.last_refreshed_at = source.last_refreshed_at
+        target.last_known_good_at = source.last_known_good_at
+        target.last_restored_at = source.last_restored_at
+        target.last_health_checked_at = source.last_health_checked_at
+        target.last_health_status = source.last_health_status
+        target.last_health_observed_schema_hash = source.last_health_observed_schema_hash
+        target.last_health_observed_tool_count = source.last_health_observed_tool_count
+        target.last_health_error = source.last_health_error
+        target.last_error = source.last_error
+
+    async def _check_record_readiness(
+        self,
+        record: ToolsetRecord,
+        *,
+        probe: bool,
+        refresh_cache: bool,
+    ) -> dict[str, Any]:
+        snapshot = self.store.get_schema_snapshot(record.namespace)
+        missing_env = [
+            name
+            for name in record.required_env
+            if name not in record.transport.env and os.getenv(name) is None
+        ]
+        boot = {
+            "checked": False,
+            "ok": None,
+            "mode": None,
+            "observed_schema_hash": None,
+            "observed_tool_count": None,
+            "error": None,
+        }
+        observed_snapshot: SchemaSnapshot | None = None
+        warnings: list[str] = []
+
+        if missing_env:
+            warnings.append("missing_required_env")
+
+        if probe:
+            try:
+                runtime = self.transport_manager.runtime_for(record.namespace)
+                if runtime is not None:
+                    probe_result = await self.transport_manager.probe_runtime(record.namespace)
+                    observed_snapshot = self._build_snapshot(record.namespace, probe_result.normalized_tools)
+                    boot["mode"] = "active_runtime"
+                else:
+                    temporary_runtime, tools = await self.transport_manager.open_runtime(record)
+                    try:
+                        observed_snapshot = self._build_snapshot(record.namespace, tools)
+                    finally:
+                        await temporary_runtime.close()
+                    boot["mode"] = "temporary"
+
+                boot["checked"] = True
+                boot["ok"] = True
+                boot["observed_schema_hash"] = observed_snapshot.schema_hash
+                boot["observed_tool_count"] = observed_snapshot.tool_count
+            except Exception as exc:  # noqa: BLE001
+                boot["checked"] = True
+                boot["ok"] = False
+                boot["error"] = self._error_info(
+                    "readiness_probe_failed",
+                    self._redact_transport_values_from_text(str(exc), record.transport),
+                    namespace=record.namespace,
+                    retryable=True,
+                ).model_dump(mode="json")
+
+        cache_updated = False
+        if refresh_cache and observed_snapshot is not None:
+            record.previous_schema_hash = record.schema_hash
+            record.schema_hash = observed_snapshot.schema_hash
+            record.tool_count = observed_snapshot.tool_count
+            now = utc_now()
+            record.last_refreshed_at = now
+            record.last_known_good_at = now
+            self.store.upsert_toolset(record)
+            self.store.replace_schema_snapshot(observed_snapshot)
+            snapshot = observed_snapshot
+            cache_updated = True
+
+        quality = self._toolset_quality_summary(record)
+        cache_matches = (
+            snapshot is not None
+            and observed_snapshot is not None
+            and snapshot.schema_hash == observed_snapshot.schema_hash
+        )
+        errors = [boot["error"]] if boot["error"] is not None else []
+        if errors:
+            status = "failed"
+            recommended_next_action = "fix_transport"
+        elif missing_env:
+            status = "warning"
+            recommended_next_action = "configure_env"
+        elif probe and boot["ok"] is not True:
+            status = "warning"
+            recommended_next_action = "probe"
+        elif snapshot is None:
+            status = "warning"
+            recommended_next_action = "refresh_cache"
+        else:
+            status = "ready"
+            recommended_next_action = "use"
+
+        return {
+            "namespace": record.namespace,
+            "title": record.title,
+            "status": status,
+            "recommended_next_action": recommended_next_action,
+            "metadata": {
+                "quality": quality.model_dump(mode="json"),
+                "required_env": record.required_env,
+                "auth_required": record.auth_required,
+            },
+            "env": {
+                "required": record.required_env,
+                "missing": missing_env,
+                "ok": not missing_env,
+            },
+            "cache": {
+                "cached": snapshot is not None,
+                "updated": cache_updated,
+                "schema_hash": snapshot.schema_hash if snapshot else None,
+                "tool_count": snapshot.tool_count if snapshot else 0,
+                "matches_observed": cache_matches if observed_snapshot is not None else None,
+            },
+            "boot": boot,
+            "activation": {
+                "loaded_scopes": [scope.value for scope in record.loaded_scopes],
+                "transport_state": record.transport_state.value,
+                "stale": record.stale,
+            },
+            "warnings": warnings,
+            "errors": errors,
+        }
+
     async def register_toolset(
         self,
         *,
@@ -1659,6 +2179,7 @@ class ToolboxService:
         restore_requires_identity: bool = True,
         restore_requires_explicit_request: bool = True,
         auth_required: bool = False,
+        required_env: list[str] | None = None,
     ) -> dict[str, Any]:
         if not self._is_valid_namespace(namespace):
             error = self._error_info(
@@ -1679,6 +2200,26 @@ class ToolboxService:
 
         try:
             normalized_transport = ToolsetTransport.model_validate(transport)
+        except ValidationError as exc:
+            error = self._error_info(
+                "invalid_transport",
+                "Transport configuration is invalid.",
+                namespace=namespace,
+                details={
+                    "validation_error": self._safe_validation_error_message(exc),
+                    "validation_errors": self._safe_validation_errors(exc),
+                },
+            )
+            self._append_audit_event(
+                operation=AuditOperation.REGISTER,
+                outcome=AuditOutcome.FAILURE,
+                namespace=namespace,
+                error=error,
+            )
+            return {
+                "registered": None,
+                "error": error.model_dump(mode="json"),
+            }
         except Exception as exc:  # noqa: BLE001
             error = self._error_info(
                 "invalid_transport",
@@ -1739,6 +2280,7 @@ class ToolboxService:
                         "restore_requires_identity": restore_requires_identity,
                         "restore_requires_explicit_request": restore_requires_explicit_request,
                         "auth_required": auth_required,
+                        "required_env": self._dedupe_strings(required_env or []),
                     }
                 )
             except ValidationError as exc:
@@ -1746,7 +2288,10 @@ class ToolboxService:
                     "invalid_scope_policy",
                     "The requested scope policy is invalid.",
                     namespace=namespace,
-                    details={"validation_error": str(exc)},
+                    details={
+                        "validation_error": self._safe_validation_error_message(exc),
+                        "validation_errors": self._safe_validation_errors(exc),
+                    },
                 )
                 self._append_audit_event(
                     operation=AuditOperation.REGISTER,
@@ -1773,37 +2318,7 @@ class ToolboxService:
                     "restorable_scopes": [scope.value for scope in record.restorable_scopes],
                 },
             )
-            return {
-                "registered": {
-                    "namespace": record.namespace,
-                    "title": record.title,
-                    "description": record.description,
-                    "category": record.category,
-                    "tags": record.tags,
-                    "aliases": record.aliases,
-                    "examples": record.examples,
-                    "recipes": record.recipes,
-                    "activation_hint": record.activation_hint,
-                    "cost_hint": record.cost_hint,
-                    "latency_hint": record.latency_hint,
-                    "trust_hint": record.trust_hint,
-                    "future_capabilities": record.future_capabilities.model_dump(mode="json"),
-                    "guidance_available": self._guidance_available(record),
-                    "guidance_sources": [
-                        source.model_dump(mode="json") for source in self._guidance_source_summaries(record)
-                    ],
-                    "composition_examples": [
-                        example.model_dump(mode="json") for example in self._composition_example_summaries(record)
-                    ],
-                    "capability_flags": self._toolset_capability_flags(record).model_dump(mode="json"),
-                    "quality": self._toolset_quality_summary(record).model_dump(mode="json"),
-                    "transport": self._public_transport(record.transport),
-                    "default_scope": record.default_scope.value,
-                    "scope_policy": self._scope_policy(record),
-                    "auth_required": record.auth_required,
-                },
-                "error": None,
-            }
+            return {"registered": self._registered_toolset_payload(record), "error": None}
 
     async def unregister_toolsets(
         self,
@@ -3248,6 +3763,14 @@ class ToolboxService:
         if isinstance(value, list | tuple):
             return [ToolboxService._redacted_argument_value(item) for item in value]
         return "[redacted]"
+
+    @staticmethod
+    def _redact_transport_values_from_text(message: str, transport: ToolsetTransport) -> str:
+        redacted = message
+        for value in [*transport.args, *transport.env.values()]:
+            if value:
+                redacted = redacted.replace(value, "[redacted]")
+        return redacted
 
     def _mounted_tool_name(self, namespace: str, source_name: str) -> str:
         return f"{namespace}.{source_name}"
