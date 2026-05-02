@@ -143,6 +143,10 @@ Recommended agent flow for packs:
 4. Call `check_toolset_readiness(namespaces=[...], probe=true, refresh_cache=true)`.
 5. Continue through `toolbox_brief`, `suggest_toolsets_for_task`, and `plan_toolset_activation`.
 
+This repo includes `docs/catalog-packs/codex-skills.json` as the first concrete pack.
+It registers the optional Codex skill-loader MCP with rich discovery metadata while
+keeping guidance bodies and composition payloads lazy until explicitly loaded.
+
 `run_tool_batch` provides a first step toward programmatic tool calling. It lets one
 Toolbox call execute multiple mounted tool calls and pass data from earlier steps into
 later ones using explicit references like `{"$from": "status.response.version"}`.

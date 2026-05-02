@@ -43,7 +43,42 @@ CODEX_PLUGIN_CACHE = "C:\\Users\\colek\\.codex\\plugins\\cache"
 
 Restart the Codex client after changing `config.toml`.
 
-## Toolbox-Managed Registration
+## Catalog Pack Registration (Recommended)
+
+If Toolbox is already loaded, prefer the repo-tracked catalog pack. It gives the
+skill loader richer agent-facing metadata, lazy guidance, and an explicit composition
+example without hand-writing a large `register_toolset` call.
+
+```json
+{
+  "path": "docs/catalog-packs/codex-skills.json"
+}
+```
+
+Recommended Toolbox flow:
+
+1. `validate_catalog_pack(path="docs/catalog-packs/codex-skills.json")`
+2. `import_catalog_pack(path="docs/catalog-packs/codex-skills.json", dry_run=true)`
+3. `import_catalog_pack(path="docs/catalog-packs/codex-skills.json")`
+4. `check_toolset_readiness(namespaces=["codex_skills"], probe=true, refresh_cache=true)`
+5. `suggest_toolsets_for_task`, `plan_toolset_activation`, then `activate_toolsets` when a task needs skill loading
+
+The pack uses a repo-relative stdio transport:
+
+```json
+{
+  "command": "python",
+  "args": ["-m", "toolbox.skills_server"],
+  "cwd": ".",
+  "env": {"PYTHONPATH": "."}
+}
+```
+
+That keeps the checked-in pack portable for this repo. If Toolbox is launched from a
+different working directory, either launch it with `cwd = "C:\\Dev\\Toolbox"` in the host
+MCP config or use the manual registration shape below with absolute paths.
+
+## Manual Toolbox-Managed Registration
 
 If Toolbox is already loaded, register the skill server as a managed toolset:
 
@@ -89,5 +124,6 @@ Mounted tool names will be `codex_skills.skills_list`,
 
 ```powershell
 python -m pytest tests\test_skills_loader.py tests\test_skills_server.py tests\test_skills_server_entrypoint.py -q
+python -m pytest tests\test_catalog_packs.py -q
 python -m toolbox.skills_server
 ```
