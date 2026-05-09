@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "name": "ulana-godot-agent-tools",
+  "description": "Lazy Toolbox registration for Ulana Godot Agent Tools, the local Codex-to-Godot bridge used by Vector Overdrive.",
+  "toolsets": [
+    {
+      "namespace": "ulana_godot_agent_tools",
+      "title": "Ulana Godot Agent Tools",
+      "description": "Inspect stock Godot projects, run safe headless project checks, and coordinate with the Ulana Godot editor addon through a local file bridge.",
+      "transport": {
+        "kind": "stdio",
+        "command": "node",
+        "args": [
+          "C:\\Dev\\Godot_MCP\\packages\\mcp-server\\build\\src\\index.js"
+        ],
+        "env": {
+          "ULANA_GODOT_WORKSPACE_ROOTS": "C:\\Dev\\Godot_MCP;C:\\Dev\\Vector_Overdrive",
+          "ULANA_GODOT_PATH": "C:\\Dev\\Godot\\Godot_v4.6.2-stable_win64_console.exe",
+          "ULANA_GODOT_LOG_LEVEL": "info",
+          "ULANA_GODOT_MCP_ROOT": "C:\\Dev\\Godot_MCP"
+        },
+        "cwd": "C:\\Dev\\Godot_MCP"
+      },
+      "tags": [
+        "godot",
+        "game-dev",
+        "mcp",
+        "vector-overdrive",
+        "editor-addon",
+        "headless-validation"
+      ],
+      "category": "game_dev",
+      "aliases": [
+        "godot mcp",
+        "ulana godot",
+        "vector overdrive tools",
+        "godot editor bridge",
+        "godot addon bridge"
+      ],
+      "examples": [
+        "Inspect Vector Overdrive project metadata and scene/script/resource summaries before game development work.",
+        "Run the Godot headless validate_project operation after changing scenes, scripts, or project settings.",
+        "Check whether the editor addon bridge is active before sending file-bridge commands."
+      ],
+      "recipes": [
+        "Start with godot_detect_installations and godot_get_project_info, then read godot://project resources for compact project context.",
+        "Use godot_run_headless_operation with validate_project for safe stock-Godot validation after edits.",
+        "Call editor_bridge_get_status before editor_bridge_send_command; a missing or stale session means the editor addon is not currently polling."
+      ],
+      "activation_hint": "Activate for Godot project work, Vector Overdrive setup, headless Godot validation, or editor addon bridge commands.",
+      "cost_hint": "low",
+      "latency_hint": "medium",
+      "trust_hint": "local_workspace",
+      "future_capabilities": {
+        "supports_tasks": true,
+        "supports_triggers": false,
+        "supports_streaming": false,
+        "supports_reference_results": true
+      },
+      "guidance_sources": [
+        {
+          "kind": "inline",
+          "title": "Godot Bridge Agent Guide",
+          "summary": "How agents should use the Ulana Godot bridge without keeping it always-on.",
+          "content": "Use this toolset only when a task needs Godot or Vector Overdrive context. Treat C:\\Dev\\Vector_Overdrive as the working game repo and C:\\Dev\\Godot_MCP as the bridge repo. Prefer godot_get_project_info and compact godot://project resources before reading many files. Use godot_run_headless_operation only for allowlisted operations such as validate_project, scan_scenes, and scan_resources. Check editor_bridge_get_status before editor_bridge_send_command; if the status is missing_session, missing_heartbeat, mismatched_session, or stale, do not assume the Godot editor addon is available. The Codex registration name is ulana-godot-agent-tools, while the Toolbox namespace is ulana_godot_agent_tools."
+        }
+      ],
+      "composition_examples": [
+        {
+          "id": "vector_overdrive_readiness_snapshot",
+          "title": "Vector Overdrive Readiness Snapshot",
+          "summary": "Collect project metadata, validate the project headlessly, and inspect editor bridge availability.",
+          "kind": "batch",
+          "tags": [
+            "godot",
+            "vector-overdrive",
+            "readiness"
+          ],
+          "required_namespaces": [
+            "ulana_godot_agent_tools"
+          ],
+          "payload": {
+            "steps": [
+              {
+                "id": "project",
+                "tool": "ulana_godot_agent_tools.godot_get_project_info",
+                "arguments": {
+                  "project_path": "C:\\Dev\\Vector_Overdrive"
+                }
+              },
+              {
+                "id": "validate",
+                "tool": "ulana_godot_agent_tools.godot_run_headless_operation",
+                "arguments": {
+                  "project_path": "C:\\Dev\\Vector_Overdrive",
+                  "operation": "validate_project"
+                }
+              },
+              {
+                "id": "bridge",
+                "tool": "ulana_godot_agent_tools.editor_bridge_get_status",
+                "arguments": {
+                  "project_path": "C:\\Dev\\Vector_Overdrive"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "default_scope": "thread",
+      "supported_scopes": [
+        "thread",
+        "session"
+      ],
+      "restorable_scopes": [],
+      "restore_requires_identity": true,
+      "restore_requires_explicit_request": true,
+      "auth_required": false,
+      "required_env": []
+    }
+  ]
+}
