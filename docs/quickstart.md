@@ -5,13 +5,13 @@ managed toolset.
 
 ## 1. Install Dependencies
 
-```powershell
+```bash
 python -m pip install -e ".[dev]"
 ```
 
 ## 2. Run Verification Once
 
-```powershell
+```bash
 python -m pytest -q
 ```
 
@@ -23,7 +23,7 @@ python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning
 
 ## 3. Start Toolbox
 
-```powershell
+```bash
 python -m toolbox.server
 ```
 

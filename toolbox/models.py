@@ -143,6 +143,33 @@ class ToolsetCompositionExample(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class CatalogPackHostVariant(BaseModel):
+    transport: ToolsetTransport | None = None
+    examples: list[str] | None = None
+    recipes: list[str] | None = None
+    activation_hint: str | None = None
+    cost_hint: str | None = None
+    latency_hint: str | None = None
+    trust_hint: str | None = None
+    guidance_sources: list[ToolsetGuidanceSource] | None = None
+    composition_examples: list[ToolsetCompositionExample] | None = None
+    required_env: list[str] | None = None
+
+    @model_validator(mode="after")
+    def normalize_metadata(self) -> CatalogPackHostVariant:
+        if self.examples is not None:
+            self.examples = _dedupe_clean_strings(self.examples)
+        if self.recipes is not None:
+            self.recipes = _dedupe_clean_strings(self.recipes)
+        if self.required_env is not None:
+            self.required_env = _dedupe_clean_strings(self.required_env)
+        self.activation_hint = self.activation_hint.strip() if self.activation_hint is not None else None
+        self.cost_hint = self.cost_hint.strip() if self.cost_hint is not None else None
+        self.latency_hint = self.latency_hint.strip() if self.latency_hint is not None else None
+        self.trust_hint = self.trust_hint.strip() if self.trust_hint is not None else None
+        return self
+
+
 class ToolsetExampleSummary(BaseModel):
     id: str
     title: str
@@ -199,7 +226,8 @@ class CatalogPackToolset(BaseModel):
     namespace: str
     title: str
     description: str
-    transport: ToolsetTransport
+    transport: ToolsetTransport | None = None
+    host_variants: dict[str, CatalogPackHostVariant] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     category: str = "general"
     aliases: list[str] = Field(default_factory=list)
@@ -228,6 +256,13 @@ class CatalogPackToolset(BaseModel):
         self.recipes = _dedupe_clean_strings(self.recipes)
         self.required_env = _dedupe_clean_strings(self.required_env)
         self.category = self.category.strip().lower().replace(" ", "_") or "general"
+        self.host_variants = {
+            key.strip().lower().replace(" ", "_"): variant
+            for key, variant in self.host_variants.items()
+            if key.strip()
+        }
+        if self.transport is None and not self.host_variants:
+            raise ValueError("catalog pack toolsets require transport or host_variants")
         return self
 
 

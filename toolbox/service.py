@@ -22,6 +22,7 @@ from toolbox.models import (
     BatchStep,
     BatchStepResult,
     CatalogPack,
+    CatalogPackHostVariant,
     CatalogPackToolset,
     ContractAvailability,
     ContractDiffResult,
@@ -79,6 +80,20 @@ from toolbox.registry import JsonStateStore
 from toolbox.scope_manager import ScopeManager
 from toolbox.transport_manager import TransportManager
 from toolbox.validation import diff_toolsets, inventory_hash, normalize_tool
+
+
+CATALOG_HOST_VARIANT_FIELDS = {
+    "transport",
+    "examples",
+    "recipes",
+    "activation_hint",
+    "cost_hint",
+    "latency_hint",
+    "trust_hint",
+    "guidance_sources",
+    "composition_examples",
+    "required_env",
+}
 
 
 def utc_now() -> datetime:
@@ -1899,7 +1914,113 @@ class ToolboxService:
                 continue
             seen.add(toolset.namespace)
 
+        resolved_toolsets: list[CatalogPackToolset] = []
+        for toolset in pack.toolsets:
+            resolved_toolset, host_error = self._resolve_catalog_toolset_for_current_host(toolset)
+            if host_error is not None:
+                errors.append(host_error)
+                continue
+            assert resolved_toolset is not None
+            resolved_toolsets.append(resolved_toolset)
+
+        pack = pack.model_copy(update={"toolsets": resolved_toolsets})
         return pack, errors, None
+
+    def _resolve_catalog_toolset_for_current_host(
+        self,
+        toolset: CatalogPackToolset,
+    ) -> tuple[CatalogPackToolset | None, ErrorInfo | None]:
+        variant_key, variant = self._select_catalog_host_variant(toolset.host_variants)
+        if variant is None:
+            if toolset.transport is not None:
+                return toolset, None
+            return (
+                None,
+                self._error_info(
+                    "catalog_pack_no_matching_host_variant",
+                    f"Catalog pack toolset has no transport for this host: {toolset.namespace}",
+                    namespace=toolset.namespace,
+                    retryable=False,
+                    details={
+                        "current_platform": sys.platform,
+                        "candidate_host_keys": self._catalog_host_candidates(),
+                        "available_host_variants": sorted(toolset.host_variants.keys()),
+                    },
+                ),
+            )
+
+        payload = toolset.model_dump(mode="python")
+        payload.pop("host_variants", None)
+        variant_payload = variant.model_dump(mode="python", exclude_unset=True)
+        for field in CATALOG_HOST_VARIANT_FIELDS:
+            if field in variant_payload and variant_payload[field] is not None:
+                payload[field] = variant_payload[field]
+
+        try:
+            resolved = CatalogPackToolset.model_validate(payload)
+        except ValidationError as exc:
+            return (
+                None,
+                self._error_info(
+                    "invalid_catalog_pack_host_variant",
+                    f"Catalog pack host variant is invalid: {variant_key}",
+                    namespace=toolset.namespace,
+                    retryable=False,
+                    details={
+                        "host_variant": variant_key,
+                        "validation_errors": self._safe_validation_errors(exc),
+                    },
+                ),
+            )
+        if resolved.transport is None:
+            return (
+                None,
+                self._error_info(
+                    "catalog_pack_no_matching_host_variant",
+                    f"Catalog pack toolset has no transport for this host: {toolset.namespace}",
+                    namespace=toolset.namespace,
+                    retryable=False,
+                    details={
+                        "current_platform": sys.platform,
+                        "candidate_host_keys": self._catalog_host_candidates(),
+                        "available_host_variants": sorted(toolset.host_variants.keys()),
+                    },
+                ),
+            )
+        return resolved, None
+
+    @classmethod
+    def _select_catalog_host_variant(
+        cls,
+        variants: dict[str, CatalogPackHostVariant],
+    ) -> tuple[str | None, CatalogPackHostVariant | None]:
+        if not variants:
+            return None, None
+        for candidate in cls._catalog_host_candidates():
+            variant = variants.get(candidate)
+            if variant is not None:
+                return candidate, variant
+        return None, None
+
+    @staticmethod
+    def _catalog_host_candidates() -> list[str]:
+        candidates = [sys.platform.lower()]
+        if sys.platform == "darwin":
+            candidates.extend(["macos", "mac", "posix", "unix"])
+        elif sys.platform == "win32":
+            candidates.extend(["windows", "win"])
+        elif sys.platform.startswith("linux"):
+            candidates.extend(["linux", "posix", "unix"])
+        else:
+            candidates.append(os.name.lower())
+        candidates.append("default")
+
+        result: list[str] = []
+        for candidate in candidates:
+            cleaned = candidate.strip().lower().replace(" ", "_")
+            if cleaned and cleaned not in result:
+                result.append(cleaned)
+        return result
 
     def _catalog_pack_summary(self, pack: CatalogPack) -> dict[str, Any]:
         return {
@@ -1911,6 +2032,7 @@ class ToolboxService:
         }
 
     def _catalog_pack_toolset_summary(self, toolset: CatalogPackToolset) -> dict[str, Any]:
+        assert toolset.transport is not None
         return {
             "namespace": toolset.namespace,
             "title": toolset.title,
@@ -1924,6 +2046,7 @@ class ToolboxService:
         }
 
     def _record_from_catalog_toolset(self, toolset: CatalogPackToolset) -> ToolsetRecord:
+        assert toolset.transport is not None
         return ToolsetRecord.model_validate(
             {
                 "namespace": toolset.namespace,

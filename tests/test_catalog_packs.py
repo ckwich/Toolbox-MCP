@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,13 @@ GODOT_TOOLS_PACK_PATH = "docs/catalog-packs/ulana-godot-agent-tools.json"
 @pytest.mark.asyncio
 async def test_codex_skills_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
     assert CODEX_SKILLS_PACK.is_file()
+    pack_payload = json.loads(CODEX_SKILLS_PACK.read_text(encoding="utf-8"))
+    assert pack_payload["toolsets"][0]["transport"]["command"] == "python"
+    assert pack_payload["toolsets"][0]["host_variants"]["posix"]["transport"]["command"] == ".venv/bin/python"
+    assert (
+        pack_payload["toolsets"][0]["host_variants"]["windows"]["transport"]["command"]
+        == ".venv\\Scripts\\python.exe"
+    )
 
     workspace = tmp_path / "workspace"
     pack_target = workspace / CATALOG_PACK_PATH
@@ -39,6 +47,8 @@ async def test_codex_skills_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
         assert summary["category"] == "skills"
         assert summary["aliases"]
         assert summary["auth_required"] is False
+        expected_command = ".venv\\Scripts\\python.exe" if sys.platform == "win32" else ".venv/bin/python"
+        assert summary["transport"]["command"] == expected_command
 
         dry_run = await service.import_catalog_pack(CATALOG_PACK_PATH, dry_run=True)
         assert dry_run["error"] is None
@@ -110,15 +120,21 @@ async def test_ulana_godot_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
     assert "C:\\Dev" not in pack_text
 
     transport = pack_payload["toolsets"][0]["transport"]
+    assert transport["command"] == "node"
+    assert transport["cwd"] == "../godot_mcp"
+    assert transport["args"] == ["packages/mcp-server/build/src/index.js"]
+    assert transport["env"]["ULANA_GODOT_PATH"] == "godot"
+
+    macos_transport = pack_payload["toolsets"][0]["host_variants"]["macos"]["transport"]
     assert (
-        transport["command"]
+        macos_transport["command"]
         == "/Users/ckwichman/.local/share/codex-migration/node-v24.14.0-darwin-arm64/bin/node"
     )
-    assert transport["cwd"] == "/Users/ckwichman/Documents/Projects/godot_mcp"
-    assert transport["args"] == [
+    assert macos_transport["cwd"] == "/Users/ckwichman/Documents/Projects/godot_mcp"
+    assert macos_transport["args"] == [
         "/Users/ckwichman/Documents/Projects/godot_mcp/packages/mcp-server/build/src/index.js"
     ]
-    assert transport["env"]["ULANA_GODOT_PATH"] == "/Applications/Godot.app/Contents/MacOS/Godot"
+    assert macos_transport["env"]["ULANA_GODOT_PATH"] == "/Applications/Godot.app/Contents/MacOS/Godot"
 
     workspace = tmp_path / "workspace"
     pack_target = workspace / GODOT_TOOLS_PACK_PATH
@@ -139,6 +155,12 @@ async def test_ulana_godot_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
         assert summary["category"] == "game_dev"
         assert summary["aliases"]
         assert summary["auth_required"] is False
+        if sys.platform == "darwin":
+            assert summary["transport"]["command"] == macos_transport["command"]
+            assert summary["transport"]["cwd"] == macos_transport["cwd"]
+        else:
+            assert summary["transport"]["command"] == "node"
+            assert summary["transport"]["cwd"] == "../godot_mcp"
 
         dry_run = await service.import_catalog_pack(GODOT_TOOLS_PACK_PATH, dry_run=True)
         assert dry_run["error"] is None
@@ -174,6 +196,10 @@ async def test_ulana_godot_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
         assert guidance["error"] is None
         assert guidance["guidance"][0]["title"] == "Godot Bridge Agent Guide"
         assert "editor_bridge_get_status" in guidance["guidance"][0]["content"]
+        if sys.platform == "darwin":
+            assert "/Users/ckwichman/Documents/Projects/vector_overdrive" in guidance["guidance"][0]["content"]
+        else:
+            assert "../vector_overdrive" in guidance["guidance"][0]["content"]
 
         example = service.load_toolset_example(
             "ulana_godot_agent_tools",
@@ -184,5 +210,11 @@ async def test_ulana_godot_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
         assert steps[0]["tool"] == "ulana_godot_agent_tools.godot_get_project_info"
         assert steps[1]["arguments"]["operation"] == "validate_project"
         assert steps[2]["tool"] == "ulana_godot_agent_tools.editor_bridge_get_status"
+        expected_project_path = (
+            "/Users/ckwichman/Documents/Projects/vector_overdrive"
+            if sys.platform == "darwin"
+            else "../vector_overdrive"
+        )
+        assert steps[0]["arguments"]["project_path"] == expected_project_path
     finally:
         await service.shutdown()

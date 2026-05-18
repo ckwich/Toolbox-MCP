@@ -17,28 +17,28 @@ It does not execute skill scripts, follow arbitrary paths, or write skill files.
 
 The default roots are:
 
-- `CODEX_SKILLS_ROOT`, or `%USERPROFILE%\.codex\skills`
-- `CODEX_PLUGIN_CACHE`, or `%USERPROFILE%\.codex\plugins\cache`
+- `CODEX_SKILLS_ROOT`, or the user's `.codex/skills` directory
+- `CODEX_PLUGIN_CACHE`, or the user's `.codex/plugins/cache` directory
 
 User skills are included by default. System, primary-runtime, and plugin skills are
 available only when the caller sets the matching include flag.
 
 ## Direct Codex Registration
 
-Add this to `C:\Users\colek\.codex\config.toml` when you want Codex to load the skill
-server directly:
+Add this to your Codex `config.toml` when you want Codex to load the skill server
+directly. Use paths for the host where Codex is running:
 
 ```toml
 [mcp_servers.codexSkills]
 command = "python"
 args = ["-m", "toolbox.skills_server"]
-cwd = "C:\\Dev\\Toolbox"
+cwd = "/path/to/Toolbox-MCP"
 enabled = true
 
 [mcp_servers.codexSkills.env]
-PYTHONPATH = "C:\\Dev\\Toolbox"
-CODEX_SKILLS_ROOT = "C:\\Users\\colek\\.codex\\skills"
-CODEX_PLUGIN_CACHE = "C:\\Users\\colek\\.codex\\plugins\\cache"
+PYTHONPATH = "/path/to/Toolbox-MCP"
+CODEX_SKILLS_ROOT = "/path/to/.codex/skills"
+CODEX_PLUGIN_CACHE = "/path/to/.codex/plugins/cache"
 ```
 
 Restart the Codex client after changing `config.toml`.
@@ -75,8 +75,8 @@ The pack uses a repo-relative stdio transport:
 ```
 
 That keeps the checked-in pack portable for this repo. If Toolbox is launched from a
-different working directory, either launch it with `cwd = "C:\\Dev\\Toolbox"` in the host
-MCP config or use the manual registration shape below with absolute paths.
+different working directory, either launch it with `cwd` set to the Toolbox checkout in the
+host MCP config or use the manual registration shape below with absolute paths.
 
 ## Manual Toolbox-Managed Registration
 
@@ -91,11 +91,11 @@ If Toolbox is already loaded, register the skill server as a managed toolset:
     "kind": "stdio",
     "command": "python",
     "args": ["-m", "toolbox.skills_server"],
-    "cwd": "C:\\Dev\\Toolbox",
+    "cwd": "/path/to/Toolbox-MCP",
     "env": {
-      "PYTHONPATH": "C:\\Dev\\Toolbox",
-      "CODEX_SKILLS_ROOT": "C:\\Users\\colek\\.codex\\skills",
-      "CODEX_PLUGIN_CACHE": "C:\\Users\\colek\\.codex\\plugins\\cache"
+      "PYTHONPATH": "/path/to/Toolbox-MCP",
+      "CODEX_SKILLS_ROOT": "/path/to/.codex/skills",
+      "CODEX_PLUGIN_CACHE": "/path/to/.codex/plugins/cache"
     }
   },
   "tags": ["codex", "skills"],
@@ -122,8 +122,8 @@ Mounted tool names will be `codex_skills.skills_list`,
 
 ## Local Smoke
 
-```powershell
-python -m pytest tests\test_skills_loader.py tests\test_skills_server.py tests\test_skills_server_entrypoint.py -q
-python -m pytest tests\test_catalog_packs.py -q
+```bash
+python -m pytest tests/test_skills_loader.py tests/test_skills_server.py tests/test_skills_server_entrypoint.py -q
+python -m pytest tests/test_catalog_packs.py -q
 python -m toolbox.skills_server
 ```

@@ -34,7 +34,7 @@ Current boundaries:
 - Python 3.12+.
 - Local stdio MCP toolsets only.
 - Local JSON state in `.toolbox/`.
-- Windows-tested; CI also runs the normal Python test suite.
+- Designed for macOS, Linux, and Windows local hosts.
 - Downstream MCP servers still run with the permissions of the command you register.
 
 ## What Toolbox Does
@@ -66,7 +66,7 @@ Current boundaries:
 
 Clone the repo and install it in editable mode:
 
-```powershell
+```bash
 git clone https://github.com/ckwich/Toolbox-MCP.git
 cd Toolbox-MCP
 python -m pip install -e ".[dev]"
@@ -74,13 +74,13 @@ python -m pip install -e ".[dev]"
 
 Run the test suite:
 
-```powershell
+```bash
 python -m pytest -q
 ```
 
 Start Toolbox as a stdio MCP server:
 
-```powershell
+```bash
 python -m toolbox.server
 ```
 
@@ -93,9 +93,9 @@ For an MCP host, configure Toolbox as a stdio server with this shape:
 {
   "command": "python",
   "args": ["-m", "toolbox.server"],
-  "cwd": "C:/path/to/Toolbox-MCP",
+  "cwd": "/path/to/Toolbox-MCP",
   "env": {
-    "PYTHONPATH": "C:/path/to/Toolbox-MCP"
+    "PYTHONPATH": "/path/to/Toolbox-MCP"
   }
 }
 ```
@@ -120,6 +120,12 @@ under stable names like `namespace.tool_name`.
 Catalog packs are workspace-local JSON files that register one or more toolsets. They are
 the preferred way to share repeatable toolset definitions without asking an agent to emit a
 large `register_toolset` payload by hand.
+
+Packs can stay OS agnostic by using a portable base transport plus optional
+`host_variants`. Toolbox resolves variants for the current host using keys such as
+`macos`, `darwin`, `linux`, `windows`, `win32`, `posix`, `unix`, and `default`.
+Host variants may override the transport, guidance, composition examples, and other
+host-specific metadata before validation and import.
 
 Recommended pack flow:
 
@@ -231,7 +237,7 @@ does not turn untrusted downstream MCP servers into safe code.
 
 Run the normal test suite:
 
-```powershell
+```bash
 python -m pytest -q
 ```
 
@@ -243,9 +249,9 @@ python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning
 
 Useful focused checks:
 
-```powershell
-python -m pytest tests\test_catalog_packs.py -q
-python -m pytest tests\test_skills_loader.py tests\test_skills_server.py tests\test_skills_server_entrypoint.py -q
+```bash
+python -m pytest tests/test_catalog_packs.py -q
+python -m pytest tests/test_skills_loader.py tests/test_skills_server.py tests/test_skills_server_entrypoint.py -q
 python -m compileall toolbox tests
 ```
 

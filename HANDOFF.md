@@ -19,6 +19,7 @@ Today the repo includes:
 - recent audit history and recent-failure summaries
 - protected transport-secret persistence and plaintext-state migration
 - a separate read-only Codex skill-loader MCP for listing, loading, searching, and validating `SKILL.md` files
+- OS-agnostic catalog packs through portable base transports plus optional host variants
 - cross-platform CI for the main verification lanes
 
 ## First Run
@@ -51,7 +52,7 @@ Today the repo includes:
 The current local verification bar is:
 
 - `python -m pytest -q`
-- `python -m pytest tests\test_skills_loader.py tests\test_skills_server.py tests\test_skills_server_entrypoint.py -q`
+- `python -m pytest tests/test_skills_loader.py tests/test_skills_server.py tests/test_skills_server_entrypoint.py -q`
 - `python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning`
 - `python -m compileall toolbox tests`
 
@@ -67,6 +68,9 @@ Toolbox persists local state in `.toolbox/state.json`.
 - On non-Windows platforms, Toolbox stores encrypted bundles in `state.json` and the
   local AES-GCM key in `.toolbox/state.key`.
 - Older plaintext transport bundles are migrated on load.
+- Catalog packs can use `host_variants` for macOS, Linux, Windows, POSIX/Unix, or
+  default host-specific overrides. Validation/import resolves the current-host variant
+  before persisting a toolset.
 
 If future work changes the state document again, treat it like a compatibility surface:
 add migration logic, test it, and document the new version clearly.

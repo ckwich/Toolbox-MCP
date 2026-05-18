@@ -9,17 +9,85 @@
       "description": "Inspect stock Godot projects, run safe headless project checks, and coordinate with the Ulana Godot editor addon through a local file bridge.",
       "transport": {
         "kind": "stdio",
-        "command": "/Users/ckwichman/.local/share/codex-migration/node-v24.14.0-darwin-arm64/bin/node",
+        "command": "node",
         "args": [
-          "/Users/ckwichman/Documents/Projects/godot_mcp/packages/mcp-server/build/src/index.js"
+          "packages/mcp-server/build/src/index.js"
         ],
         "env": {
-          "ULANA_GODOT_WORKSPACE_ROOTS": "/Users/ckwichman/Documents/Projects/godot_mcp;/Users/ckwichman/Documents/Projects/vector_overdrive",
-          "ULANA_GODOT_PATH": "/Applications/Godot.app/Contents/MacOS/Godot",
+          "ULANA_GODOT_WORKSPACE_ROOTS": "../godot_mcp;../vector_overdrive",
+          "ULANA_GODOT_PATH": "godot",
           "ULANA_GODOT_LOG_LEVEL": "info",
-          "ULANA_GODOT_MCP_ROOT": "/Users/ckwichman/Documents/Projects/godot_mcp"
+          "ULANA_GODOT_MCP_ROOT": "../godot_mcp"
         },
-        "cwd": "/Users/ckwichman/Documents/Projects/godot_mcp"
+        "cwd": "../godot_mcp"
+      },
+      "host_variants": {
+        "macos": {
+          "transport": {
+            "kind": "stdio",
+            "command": "/Users/ckwichman/.local/share/codex-migration/node-v24.14.0-darwin-arm64/bin/node",
+            "args": [
+              "/Users/ckwichman/Documents/Projects/godot_mcp/packages/mcp-server/build/src/index.js"
+            ],
+            "env": {
+              "ULANA_GODOT_WORKSPACE_ROOTS": "/Users/ckwichman/Documents/Projects/godot_mcp;/Users/ckwichman/Documents/Projects/vector_overdrive",
+              "ULANA_GODOT_PATH": "/Applications/Godot.app/Contents/MacOS/Godot",
+              "ULANA_GODOT_LOG_LEVEL": "info",
+              "ULANA_GODOT_MCP_ROOT": "/Users/ckwichman/Documents/Projects/godot_mcp"
+            },
+            "cwd": "/Users/ckwichman/Documents/Projects/godot_mcp"
+          },
+          "guidance_sources": [
+            {
+              "kind": "inline",
+              "title": "Godot Bridge Agent Guide",
+              "summary": "How agents should use the Ulana Godot bridge without keeping it always-on.",
+              "content": "Use this toolset only when a task needs Godot or Vector Overdrive context. Treat /Users/ckwichman/Documents/Projects/vector_overdrive as the working game repo and /Users/ckwichman/Documents/Projects/godot_mcp as the bridge repo on this Mac. Prefer godot_get_project_info and compact godot://project resources before reading many files. Use godot_run_headless_operation only for allowlisted operations such as validate_project, scan_scenes, and scan_resources. Check editor_bridge_get_status before editor_bridge_send_command; if the status is missing_session, missing_heartbeat, mismatched_session, or stale, do not assume the Godot editor addon is available. The Codex registration name is ulana-godot-agent-tools, while the Toolbox namespace is ulana_godot_agent_tools."
+            }
+          ],
+          "composition_examples": [
+            {
+              "id": "vector_overdrive_readiness_snapshot",
+              "title": "Vector Overdrive Readiness Snapshot",
+              "summary": "Collect project metadata, validate the project headlessly, and inspect editor bridge availability.",
+              "kind": "batch",
+              "tags": [
+                "godot",
+                "vector-overdrive",
+                "readiness"
+              ],
+              "required_namespaces": [
+                "ulana_godot_agent_tools"
+              ],
+              "payload": {
+                "steps": [
+                  {
+                    "id": "project",
+                    "tool": "ulana_godot_agent_tools.godot_get_project_info",
+                    "arguments": {
+                      "project_path": "/Users/ckwichman/Documents/Projects/vector_overdrive"
+                    }
+                  },
+                  {
+                    "id": "validate",
+                    "tool": "ulana_godot_agent_tools.godot_run_headless_operation",
+                    "arguments": {
+                      "project_path": "/Users/ckwichman/Documents/Projects/vector_overdrive",
+                      "operation": "validate_project"
+                    }
+                  },
+                  {
+                    "id": "bridge",
+                    "tool": "ulana_godot_agent_tools.editor_bridge_get_status",
+                    "arguments": {
+                      "project_path": "/Users/ckwichman/Documents/Projects/vector_overdrive"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
       },
       "tags": [
         "godot",
@@ -62,7 +130,7 @@
           "kind": "inline",
           "title": "Godot Bridge Agent Guide",
           "summary": "How agents should use the Ulana Godot bridge without keeping it always-on.",
-          "content": "Use this toolset only when a task needs Godot or Vector Overdrive context. Treat /Users/ckwichman/Documents/Projects/vector_overdrive as the working game repo and /Users/ckwichman/Documents/Projects/godot_mcp as the bridge repo. Prefer godot_get_project_info and compact godot://project resources before reading many files. Use godot_run_headless_operation only for allowlisted operations such as validate_project, scan_scenes, and scan_resources. Check editor_bridge_get_status before editor_bridge_send_command; if the status is missing_session, missing_heartbeat, mismatched_session, or stale, do not assume the Godot editor addon is available. The Codex registration name is ulana-godot-agent-tools, while the Toolbox namespace is ulana_godot_agent_tools."
+          "content": "Use this toolset only when a task needs Godot or Vector Overdrive context. Treat ../vector_overdrive as the working game repo and ../godot_mcp as the bridge repo when using the default sibling-checkout layout. Prefer godot_get_project_info and compact godot://project resources before reading many files. Use godot_run_headless_operation only for allowlisted operations such as validate_project, scan_scenes, and scan_resources. Check editor_bridge_get_status before editor_bridge_send_command; if the status is missing_session, missing_heartbeat, mismatched_session, or stale, do not assume the Godot editor addon is available. The Codex registration name is ulana-godot-agent-tools, while the Toolbox namespace is ulana_godot_agent_tools."
         }
       ],
       "composition_examples": [
@@ -85,14 +153,14 @@
                 "id": "project",
                 "tool": "ulana_godot_agent_tools.godot_get_project_info",
                 "arguments": {
-                  "project_path": "/Users/ckwichman/Documents/Projects/vector_overdrive"
+                  "project_path": "../vector_overdrive"
                 }
               },
               {
                 "id": "validate",
                 "tool": "ulana_godot_agent_tools.godot_run_headless_operation",
                 "arguments": {
-                  "project_path": "/Users/ckwichman/Documents/Projects/vector_overdrive",
+                  "project_path": "../vector_overdrive",
                   "operation": "validate_project"
                 }
               },
@@ -100,7 +168,7 @@
                 "id": "bridge",
                 "tool": "ulana_godot_agent_tools.editor_bridge_get_status",
                 "arguments": {
-                  "project_path": "/Users/ckwichman/Documents/Projects/vector_overdrive"
+                  "project_path": "../vector_overdrive"
                 }
               }
             ]

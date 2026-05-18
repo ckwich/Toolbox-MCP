@@ -19,6 +19,36 @@
         },
         "cwd": "."
       },
+      "host_variants": {
+        "posix": {
+          "transport": {
+            "kind": "stdio",
+            "command": ".venv/bin/python",
+            "args": [
+              "-m",
+              "toolbox.skills_server"
+            ],
+            "env": {
+              "PYTHONPATH": "."
+            },
+            "cwd": "."
+          }
+        },
+        "windows": {
+          "transport": {
+            "kind": "stdio",
+            "command": ".venv\\Scripts\\python.exe",
+            "args": [
+              "-m",
+              "toolbox.skills_server"
+            ],
+            "env": {
+              "PYTHONPATH": "."
+            },
+            "cwd": "."
+          }
+        }
+      },
       "tags": [
         "codex",
         "skills",

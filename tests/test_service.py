@@ -85,6 +85,14 @@ def create_service(
     return service
 
 
+def current_catalog_host_alias() -> str:
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform == "win32":
+        return "windows"
+    return sys.platform
+
+
 async def shutdown_server(server) -> None:
     await server.toolbox_service.shutdown()
     if sys.platform != "win32":
@@ -186,6 +194,117 @@ def test_catalog_pack_validation_reports_valid_and_invalid_manifests(tmp_path: P
 
     assert unsupported["valid"] is False
     assert unsupported["errors"][0]["code"] == "unsupported_catalog_pack_version"
+
+
+@pytest.mark.asyncio
+async def test_catalog_pack_import_resolves_current_host_variant_without_base_transport(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    host_key = current_catalog_host_alias()
+    pack_path = tmp_path / "packs" / "host-pack.json"
+    write_catalog_pack(
+        pack_path,
+        [
+            {
+                "namespace": "host_docs",
+                "title": "Host Docs",
+                "description": "Uses a current-host catalog variant.",
+                "host_variants": {
+                    host_key: {
+                        "transport": {
+                            "kind": "stdio",
+                            "command": sys.executable,
+                            "args": [
+                                "-m",
+                                "toolbox.fake_managed_server",
+                                "--manifest",
+                                str(service.fake_manifest_path),
+                            ],
+                            "env": {"PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                            "cwd": str(tmp_path),
+                        },
+                        "guidance_sources": [
+                            {
+                                "kind": "inline",
+                                "title": "Host Docs Guide",
+                                "content": f"Use the {host_key} host variant.",
+                            }
+                        ],
+                        "composition_examples": [
+                            {
+                                "id": "host_status",
+                                "title": "Host Status",
+                                "kind": "batch",
+                                "payload": {
+                                    "steps": [
+                                        {
+                                            "id": "status",
+                                            "tool": "host_docs.fake_status",
+                                            "arguments": {},
+                                        }
+                                    ]
+                                },
+                            }
+                        ],
+                    }
+                },
+                "category": "docs",
+                "tags": ["host"],
+                "activation_hint": "Activate for host-specific docs.",
+                "cost_hint": "low",
+                "latency_hint": "low",
+                "trust_hint": "local",
+            }
+        ],
+    )
+
+    validation = service.validate_catalog_pack(str(pack_path))
+
+    assert validation["error"] is None
+    assert validation["valid"] is True
+    assert validation["toolsets"][0]["namespace"] == "host_docs"
+    assert validation["toolsets"][0]["transport"]["command"] == sys.executable
+
+    imported = await service.import_catalog_pack(str(pack_path))
+
+    assert imported["error"] is None
+    assert imported["imported"][0]["namespace"] == "host_docs"
+    record = service.store.get_toolset("host_docs")
+    assert record is not None
+    assert record.transport.command == sys.executable
+    assert record.transport.cwd == str(tmp_path)
+    assert record.guidance_sources[0].content == f"Use the {host_key} host variant."
+    assert record.composition_examples[0].id == "host_status"
+
+
+def test_catalog_pack_validation_fails_when_current_host_has_no_variant(tmp_path: Path) -> None:
+    service = create_service(tmp_path)
+    missing_host_key = "windows" if current_catalog_host_alias() != "windows" else "macos"
+    pack_path = tmp_path / "packs" / "missing-host-pack.json"
+    write_catalog_pack(
+        pack_path,
+        [
+            {
+                "namespace": "missing_host",
+                "title": "Missing Host",
+                "description": "Has variants, but none for this host.",
+                "host_variants": {
+                    missing_host_key: {
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "python",
+                        }
+                    }
+                },
+            }
+        ],
+    )
+
+    validation = service.validate_catalog_pack(str(pack_path))
+
+    assert validation["valid"] is False
+    assert validation["errors"][0]["code"] == "catalog_pack_no_matching_host_variant"
+    assert validation["errors"][0]["namespace"] == "missing_host"
+    assert validation["errors"][0]["details"]["current_platform"] == sys.platform
 
 
 def test_catalog_pack_validation_errors_do_not_echo_transport_secrets(tmp_path: Path) -> None:
