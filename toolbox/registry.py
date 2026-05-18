@@ -15,7 +15,7 @@ from toolbox.models import (
     StoredAuditEvent,
     ToolsetRecord,
 )
-from toolbox.transport_secrets import TransportSecretManager
+from toolbox.transport_secrets import TransportSecretManager, TransportSecretUnavailableError
 
 
 T = TypeVar("T")
@@ -74,9 +74,23 @@ class JsonStateStore:
             restored_toolset = dict(toolset)
             transport = toolset.get("transport")
             if isinstance(transport, dict):
-                restored_transport, _ = self._transport_secrets.restore_transport(transport)
-                restored_toolset["transport"] = restored_transport
-                migrated = migrated or self._transport_secrets.needs_migration(transport)
+                try:
+                    restored_transport, _ = self._transport_secrets.restore_transport(transport)
+                    restored_toolset["transport"] = restored_transport
+                    migrated = migrated or self._transport_secrets.needs_migration(transport)
+                except TransportSecretUnavailableError as exc:
+                    restored_toolset["transport"] = self._transport_with_unavailable_secret_dropped(transport)
+                    restored_toolset["transport_state"] = "failed"
+                    restored_toolset["stale"] = True
+                    restored_toolset["stale_reason"] = "transport_secret_unavailable"
+                    restored_toolset["last_error"] = {
+                        "code": "transport_secret_unavailable",
+                        "message": str(exc),
+                        "namespace": restored_toolset.get("namespace"),
+                        "retryable": False,
+                        "details": {"provider": exc.provider},
+                    }
+                    migrated = True
             toolsets.append(restored_toolset)
 
         restored["toolsets"] = toolsets
@@ -93,6 +107,14 @@ class JsonStateStore:
                 toolset["transport"] = self._transport_secrets.protect_transport(transport)
         payload["version"] = StateDocument().version
         return payload
+
+    @staticmethod
+    def _transport_with_unavailable_secret_dropped(transport: dict[str, object]) -> dict[str, object]:
+        restored = dict(transport)
+        restored.pop("secret_envelope", None)
+        restored["args"] = []
+        restored["env"] = {}
+        return restored
 
     def _mutate(self, fn: Callable[[StateDocument], T]) -> T:
         self.ensure()

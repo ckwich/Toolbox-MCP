@@ -105,6 +105,20 @@ async def test_codex_skills_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_ulana_godot_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
     assert GODOT_TOOLS_PACK.is_file()
+    pack_payload = json.loads(GODOT_TOOLS_PACK.read_text(encoding="utf-8"))
+    pack_text = json.dumps(pack_payload, sort_keys=True)
+    assert "C:\\Dev" not in pack_text
+
+    transport = pack_payload["toolsets"][0]["transport"]
+    assert (
+        transport["command"]
+        == "/Users/ckwichman/.local/share/codex-migration/node-v24.14.0-darwin-arm64/bin/node"
+    )
+    assert transport["cwd"] == "/Users/ckwichman/Documents/Projects/godot_mcp"
+    assert transport["args"] == [
+        "/Users/ckwichman/Documents/Projects/godot_mcp/packages/mcp-server/build/src/index.js"
+    ]
+    assert transport["env"]["ULANA_GODOT_PATH"] == "/Applications/Godot.app/Contents/MacOS/Godot"
 
     workspace = tmp_path / "workspace"
     pack_target = workspace / GODOT_TOOLS_PACK_PATH

@@ -18,6 +18,12 @@ WINDOWS_DPAPI_PROVIDER = "windows-dpapi"
 LOCAL_AESGCM_PROVIDER = "local-aesgcm-keyfile"
 
 
+class TransportSecretUnavailableError(ValueError):
+    def __init__(self, message: str, *, provider: str | None = None) -> None:
+        super().__init__(message)
+        self.provider = provider
+
+
 class TransportSecretManager:
     def __init__(self, state_path: Path) -> None:
         self.state_path = state_path
@@ -63,11 +69,17 @@ class TransportSecretManager:
         provider_name = envelope.get("provider")
         if provider_name == WINDOWS_DPAPI_PROVIDER:
             if sys.platform != "win32":
-                raise ValueError("State file uses Windows DPAPI transport protection and cannot be opened on this platform")
+                raise TransportSecretUnavailableError(
+                    "State file uses Windows DPAPI transport protection and cannot be opened on this platform",
+                    provider=WINDOWS_DPAPI_PROVIDER,
+                )
             return _WindowsDpapiTransportSecretProvider()
         if provider_name == LOCAL_AESGCM_PROVIDER:
             return _LocalKeyAesGcmTransportSecretProvider(self.state_path.with_suffix(".key"))
-        raise ValueError(f"Unsupported transport secret provider: {provider_name}")
+        raise TransportSecretUnavailableError(
+            f"Unsupported transport secret provider: {provider_name}",
+            provider=str(provider_name) if provider_name is not None else None,
+        )
 
 
 class _BaseTransportSecretProvider:

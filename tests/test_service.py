@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from toolbox.models import AuditOperation, AuditOutcome, BatchStep, HealthStatus, Scope
+from toolbox.models import AuditOperation, AuditOutcome, BatchStep, HealthStatus, Scope, TransportState
 from toolbox.program_runtime import ToolProgramRuntime
 from toolbox.registry import JsonStateStore
 from toolbox.service import ToolboxService
@@ -2889,6 +2889,70 @@ async def test_plaintext_transport_state_is_migrated_on_load(tmp_path: Path) -> 
     assert secret not in migrated_state_text
     assert '"secret_envelope"' in migrated_state_text
     assert '"version": 2' in migrated_state_text
+
+
+def test_unavailable_transport_secret_marks_only_that_toolset_stale(tmp_path: Path) -> None:
+    state_path = tmp_path / ".toolbox" / "state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "toolsets": [
+                    {
+                        "namespace": "foreign_stdio",
+                        "title": "Foreign Stdio",
+                        "description": "A migrated toolset with a foreign secret envelope.",
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "node",
+                            "args": [],
+                            "env": {},
+                            "secret_envelope": {
+                                "version": 1,
+                                "provider": "foreign-secret-provider",
+                                "ciphertext": "not-readable-here",
+                            },
+                        },
+                    },
+                    {
+                        "namespace": "plain_stdio",
+                        "title": "Plain Stdio",
+                        "description": "A readable neighboring toolset.",
+                        "transport": {
+                            "kind": "stdio",
+                            "command": "python",
+                            "args": [],
+                            "env": {},
+                        },
+                    },
+                ],
+                "schema_cache": [],
+                "previous_schema_cache": [],
+                "audit_log": [],
+                "next_audit_sequence": 1,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    store = JsonStateStore(state_path)
+    document = store.load()
+
+    foreign = next(record for record in document.toolsets if record.namespace == "foreign_stdio")
+    assert foreign.stale is True
+    assert foreign.stale_reason == "transport_secret_unavailable"
+    assert foreign.transport_state == TransportState.FAILED
+    assert foreign.last_error is not None
+    assert foreign.last_error.code == "transport_secret_unavailable"
+    assert foreign.transport.args == []
+    assert foreign.transport.env == {}
+
+    plain = next(record for record in document.toolsets if record.namespace == "plain_stdio")
+    assert plain.stale is False
+    assert plain.transport.command == "python"
 
 
 @pytest.mark.asyncio
