@@ -398,6 +398,17 @@ def _score_record(record: SkillRecord, query: str) -> int:
         score += 6
     if query in body:
         score += 2
+    terms = _query_terms(query)
+    if len(terms) > 1:
+        for term in terms:
+            if name == term:
+                score += 8
+            if term in name:
+                score += 5
+            if term in description:
+                score += 3
+            if term in body:
+                score += 1
     return score
 
 
@@ -411,6 +422,15 @@ def _build_snippet(record: SkillRecord, query: str) -> str:
         if query in line.lower():
             return _clip(line.strip())
 
+    for term in _query_terms(query):
+        if term in record.description.lower():
+            return record.description
+        if term in record.name.lower() and record.description:
+            return record.description
+        for line in record.body.splitlines():
+            if term in line.lower():
+                return _clip(line.strip())
+
     return _clip(record.body.strip() or record.description or record.name)
 
 
@@ -418,3 +438,11 @@ def _clip(value: str, limit: int = 280) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 3].rstrip() + "..."
+
+
+def _query_terms(query: str) -> list[str]:
+    return [
+        term
+        for term in query.replace("-", " ").replace("_", " ").split()
+        if len(term) >= 3
+    ]

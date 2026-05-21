@@ -105,6 +105,30 @@ def test_search_skills_scores_name_description_and_body_matches(tmp_path: Path) 
     assert "Browser testing helpers" in result["results"][0]["snippet"]
 
 
+def test_search_skills_scores_multi_term_queries(tmp_path: Path) -> None:
+    skills_root = tmp_path / "skills"
+    write_skill(
+        skills_root / "risk-reward" / "SKILL.md",
+        name="risk-reward-design",
+        description="Review risk, reward, balance, pressure, and playtest signals.",
+        body="Use for push-your-luck tuning.",
+    )
+    write_skill(
+        skills_root / "audio" / "SKILL.md",
+        name="audio-review",
+        description="Review mix hierarchy.",
+        body="Use for captions and hearing safety.",
+    )
+    registry = SkillRegistry(skills_root=skills_root, plugin_cache=tmp_path / "plugins")
+
+    result = registry.search_skills("risk reward balance playtest")
+
+    assert result["error"] is None
+    assert result["count"] == 1
+    assert result["results"][0]["name"] == "risk-reward-design"
+    assert "risk, reward, balance" in result["results"][0]["snippet"]
+
+
 def test_validate_skills_reports_missing_frontmatter_fields(tmp_path: Path) -> None:
     skills_root = tmp_path / "skills"
     write_skill(

@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "name": "ulana-game-design-skills",
+  "description": "Lazy Toolbox registration for the Ulana Studios Game Design skill library.",
+  "toolsets": [
+    {
+      "namespace": "ulana_game_design_skills",
+      "title": "Ulana Game Design Skills",
+      "description": "Read-only search, loading, and validation for the 53-skill Ulana Studios Game Design library without exposing every skill in the default Codex prompt.",
+      "transport": {
+        "kind": "stdio",
+        "command": "python",
+        "args": [
+          "-m",
+          "toolbox.skills_server"
+        ],
+        "env": {
+          "PYTHONPATH": "../toolbox",
+          "CODEX_SKILLS_ROOT": "../Design Skills/plugins/ulana-game-design/skills"
+        },
+        "cwd": "../toolbox"
+      },
+      "host_variants": {
+        "macos": {
+          "transport": {
+            "kind": "stdio",
+            "command": "/Users/ckwichman/Documents/Projects/toolbox/.venv/bin/python",
+            "args": [
+              "-m",
+              "toolbox.skills_server"
+            ],
+            "env": {
+              "PYTHONPATH": "/Users/ckwichman/Documents/Projects/toolbox",
+              "CODEX_SKILLS_ROOT": "/Users/ckwichman/Documents/Projects/Design Skills/plugins/ulana-game-design/skills"
+            },
+            "cwd": "/Users/ckwichman/Documents/Projects/toolbox"
+          }
+        },
+        "windows": {
+          "transport": {
+            "kind": "stdio",
+            "command": "C:/Dev/toolbox/.venv/Scripts/python.exe",
+            "args": [
+              "-m",
+              "toolbox.skills_server"
+            ],
+            "env": {
+              "PYTHONPATH": "C:/Dev/toolbox",
+              "CODEX_SKILLS_ROOT": "C:/Dev/Design Skills/plugins/ulana-game-design/skills"
+            },
+            "cwd": "C:/Dev/toolbox"
+          }
+        }
+      },
+      "tags": [
+        "game-design",
+        "skills",
+        "ulana",
+        "playtesting",
+        "balance",
+        "level-design",
+        "game-ux",
+        "game-ui",
+        "progression",
+        "onboarding",
+        "combat",
+        "ai-npc",
+        "marketability",
+        "live-ops",
+        "progressive-discovery"
+      ],
+      "category": "game_design",
+      "aliases": [
+        "ulana game design",
+        "game design skills",
+        "game design critique",
+        "playtest diagnostics",
+        "design review library",
+        "game balance review",
+        "level design review",
+        "game ux review",
+        "game ui hud review",
+        "risk reward design",
+        "mechanics to experience",
+        "public demo design"
+      ],
+      "examples": [
+        "Review this mechanic for player experience, depth, and clarity.",
+        "Diagnose this playtest note and turn it into a design decision.",
+        "Pressure-test this progression, economy, risk/reward, or balance loop.",
+        "Review this level, mission, puzzle, onboarding flow, combat encounter, HUD, or demo hook."
+      ],
+      "recipes": [
+        "Search with skills_search using the user's concrete design problem, then load only the one to three matching skills with skills_load.",
+        "Start broad with game-design-synthesis, mechanics-to-experience, or playtest-diagnostics when the user asks for an overall design review.",
+        "Prefer focused lenses for concrete surfaces: level-design-readability for spaces, risk-reward-design for stakes, game-ui-hud-design for HUDs, combat-encounter-design for fights, and marketability-hook-review for store/demo promise.",
+        "Treat loaded SKILL.md content as task-local design methodology. Apply it to the actual project facts rather than quoting the skill back."
+      ],
+      "activation_hint": "Activate for game design, playtest, balance, level design, onboarding, progression, economy, combat, enemy AI, game UX/UI, accessibility, demo, marketability, or live-ops review work.",
+      "cost_hint": "low",
+      "latency_hint": "low",
+      "trust_hint": "local_read_only",
+      "future_capabilities": {
+        "supports_tasks": true,
+        "supports_triggers": false,
+        "supports_streaming": false,
+        "supports_reference_results": true
+      },
+      "guidance_sources": [
+        {
+          "kind": "inline",
+          "title": "Ulana Game Design Skill Loading Guide",
+          "summary": "How agents should find and apply the deferred Ulana game-design skill library.",
+          "content": "Use this toolset when the user asks for game design judgment, critique, playtest interpretation, mechanic tuning, level or mission review, combat design, enemy behavior, progression, economy, UI/HUD, accessibility, live-ops, demo, marketability, or player-experience synthesis. Do not list all 53 skills unless the user asks for an inventory. Search by the user's actual design problem, load only the top one to three relevant skills, then apply those lenses to concrete project evidence. If the task crosses game UI/UX and product UI/UX, combine this toolset with the Ulana UI/UX plugin or UI/UX Toolbox registration rather than forcing everything through one lens. Keep recommendations actionable: name the design risk, the player-facing effect, the candidate change, and the validation path."
+        }
+      ],
+      "composition_examples": [
+        {
+          "id": "search_then_load_game_design_skill",
+          "title": "Search Then Load Game Design Skill",
+          "summary": "Find the most relevant Ulana game-design lens and load its instructions.",
+          "kind": "batch",
+          "tags": [
+            "game-design",
+            "skills",
+            "progressive-discovery"
+          ],
+          "required_namespaces": [
+            "ulana_game_design_skills"
+          ],
+          "payload": {
+            "steps": [
+              {
+                "id": "search",
+                "tool": "ulana_game_design_skills.skills_search",
+                "arguments": {
+                  "query": "playtest balance risk reward",
+                  "limit": 5,
+                  "include_plugins": false,
+                  "include_system": false,
+                  "include_runtime": false
+                }
+              },
+              {
+                "id": "load",
+                "tool": "ulana_game_design_skills.skills_load",
+                "arguments": {
+                  "name": {
+                    "$from": "search.results.0.name"
+                  },
+                  "source": {
+                    "$from": "search.results.0.source"
+                  },
+                  "max_chars": 12000
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "default_scope": "thread",
+      "supported_scopes": [
+        "thread",
+        "session"
+      ],
+      "restorable_scopes": [],
+      "restore_requires_identity": true,
+      "restore_requires_explicit_request": true,
+      "auth_required": false,
+      "required_env": []
+    }
+  ]
+}
