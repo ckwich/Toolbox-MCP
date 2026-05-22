@@ -26,7 +26,8 @@ available only when the caller sets the matching include flag.
 
 Use `skills_roots_status` when diagnosing missing skills, duplicate names, or broken
 root configuration. Its response is metadata-only; it reports paths, existence flags,
-source counts, and compact duplicate groups without returning skill bodies.
+source flags, source counts, compact duplicate and ambiguous lookup groups, and root
+overlap warnings without returning skill bodies.
 
 ## Loading Strategy
 

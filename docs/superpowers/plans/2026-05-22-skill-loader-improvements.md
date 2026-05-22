@@ -87,6 +87,7 @@
   - Add server coverage that `skills_roots_status` is exposed.
   - Assert diagnostics include root paths, existence/readability flags, enabled source flags, counts by source, duplicate name groups, total skill count, and `SKILL.md` discovery counts.
   - Assert missing roots are reported as `exists: false` and do not raise.
+  - Assert folder/name lookup collisions and overlapping configured roots are surfaced as diagnostics.
   - Assert diagnostics never include `content`, `body`, or full frontmatter values.
   - Expected: FAIL because no diagnostics API exists.
 
@@ -95,6 +96,7 @@
   - Add MCP tool `skills_roots_status`.
   - Reuse the same source flags as listing/searching so defaults only cover user skills.
   - Report duplicate groups by normalized name with compact record summaries and paths.
+  - Report ambiguous lookup groups and overlapping root warnings without scanning excluded sources.
   - Do not include full content in diagnostics.
 
 - [x] **Step 3: Verify**

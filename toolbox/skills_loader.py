@@ -293,32 +293,57 @@ class SkillRegistry:
         for record in records:
             counts_by_source[record.source] += 1
 
+        source_flags = {
+            "user": True,
+            "system": include_system,
+            "runtime": include_runtime,
+            "plugin": include_plugins,
+        }
         roots = {
-            "skills_root": _root_status(self.skills_root, enabled=True),
-            "system_root": _root_status(self.skills_root / ".system", enabled=include_system),
-            "runtime_root": _root_status(self.skills_root / "codex-primary-runtime", enabled=include_runtime),
-            "plugin_cache": _root_status(self.plugin_cache, enabled=include_plugins),
+            "skills_root": _root_status(
+                self.skills_root,
+                source="user",
+                enabled=True,
+                skill_count=counts_by_source["user"],
+            ),
+            "system_root": _root_status(
+                self.skills_root / ".system",
+                source="system",
+                enabled=include_system,
+                skill_count=counts_by_source["system"],
+            ),
+            "runtime_root": _root_status(
+                self.skills_root / "codex-primary-runtime",
+                source="runtime",
+                enabled=include_runtime,
+                skill_count=counts_by_source["runtime"],
+            ),
+            "plugin_cache": _root_status(
+                self.plugin_cache,
+                source="plugin",
+                enabled=include_plugins,
+                skill_count=counts_by_source["plugin"],
+            ),
         }
         duplicate_groups = [
             {
-                "name": normalized_name,
+                "name": group[0].name,
+                "normalized_name": normalized_name,
+                "count": len(group),
+                "sources": sorted({record.source for record in group}),
                 "records": [_compact_record(record) for record in sorted(group, key=_record_sort_key)],
             }
             for normalized_name, group in _records_by_normalized_name(records).items()
             if len(group) > 1
         ]
-        duplicate_groups.sort(key=lambda item: item["name"])
+        duplicate_groups.sort(key=lambda item: item["normalized_name"])
 
         return {
             "error": None,
             "skills_root": str(self.skills_root),
             "plugin_cache": str(self.plugin_cache),
-            "enabled_sources": {
-                "user": True,
-                "system": include_system,
-                "runtime": include_runtime,
-                "plugin": include_plugins,
-            },
+            "enabled_sources": source_flags,
+            "source_flags": source_flags,
             "roots": roots,
             "counts_by_source": counts_by_source,
             "skill_md_counts": {
@@ -327,6 +352,8 @@ class SkillRegistry:
             },
             "total_skill_count": len(records),
             "duplicate_name_groups": duplicate_groups,
+            "ambiguous_lookup_groups": _ambiguous_lookup_groups(records),
+            "warnings": _root_warnings(self.skills_root, self.plugin_cache),
         }
 
     def _resolve_records(
@@ -420,24 +447,33 @@ class SkillRegistry:
         return paths
 
     def _iter_skill_paths(self, root: Path) -> list[Path]:
-        if not root.exists() or not root.is_dir():
+        try:
+            if not root.exists() or not root.is_dir():
+                return []
+            return sorted(path for path in root.rglob("SKILL.md") if path.is_file())
+        except OSError:
             return []
-        return sorted(path for path in root.rglob("SKILL.md") if path.is_file())
 
     def _iter_user_skill_paths(self) -> list[Path]:
-        if not self.skills_root.exists() or not self.skills_root.is_dir():
+        try:
+            if not self.skills_root.exists() or not self.skills_root.is_dir():
+                return []
+        except OSError:
             return []
 
         paths: list[Path] = []
         root_skill = self.skills_root / "SKILL.md"
-        if root_skill.is_file():
-            paths.append(root_skill)
+        try:
+            if root_skill.is_file():
+                paths.append(root_skill)
 
-        for child in sorted(self.skills_root.iterdir()):
-            if child.name in {".system", "codex-primary-runtime", "SKILL.md"}:
-                continue
-            if child.is_dir():
-                paths.extend(path for path in child.rglob("SKILL.md") if path.is_file())
+            for child in sorted(self.skills_root.iterdir()):
+                if child.name in {".system", "codex-primary-runtime", "SKILL.md"}:
+                    continue
+                if child.is_dir():
+                    paths.extend(path for path in child.rglob("SKILL.md") if path.is_file())
+        except OSError:
+            return sorted(paths)
         return sorted(paths)
 
     def _read_record(self, path: Path, source: str) -> SkillRecord:
@@ -784,15 +820,20 @@ def _section_id(title: str) -> str:
     return "-".join(_WORD_PATTERN.findall(title.lower()))
 
 
-def _root_status(root: Path, *, enabled: bool) -> dict[str, Any]:
+def _root_status(root: Path, *, source: str, enabled: bool, skill_count: int) -> dict[str, Any]:
     status: dict[str, Any] = {
+        "source": source,
         "path": str(root),
         "enabled": enabled,
         "exists": None,
         "is_dir": None,
         "readable": None,
+        "skill_count": None,
+        "scan_skipped_reason": None,
+        "errors": [],
     }
     if not enabled:
+        status["scan_skipped_reason"] = "source_excluded"
         return status
     try:
         exists = root.exists()
@@ -802,7 +843,22 @@ def _root_status(root: Path, *, enabled: bool) -> dict[str, Any]:
         exists = False
         is_dir = False
         readable = False
-    status.update({"exists": exists, "is_dir": is_dir, "readable": readable})
+
+    errors: list[dict[str, str]] = []
+    if not exists:
+        errors.append({"code": "missing_root", "message": f"{source} root does not exist."})
+    elif not is_dir:
+        errors.append({"code": "not_directory", "message": f"{source} root is not a directory."})
+
+    status.update(
+        {
+            "exists": exists,
+            "is_dir": is_dir,
+            "readable": readable,
+            "skill_count": skill_count if exists and is_dir else 0,
+            "errors": errors,
+        }
+    )
     return status
 
 
@@ -811,6 +867,60 @@ def _records_by_normalized_name(records: list[SkillRecord]) -> dict[str, list[Sk
     for record in records:
         groups[record.name.strip().lower()].append(record)
     return groups
+
+
+def _ambiguous_lookup_groups(records: list[SkillRecord]) -> list[dict[str, Any]]:
+    lookup_groups: dict[str, dict[str, SkillRecord]] = defaultdict(dict)
+    for record in records:
+        for lookup_key in {record.name.strip().lower(), record.folder.strip().lower()}:
+            if lookup_key:
+                lookup_groups[lookup_key][str(record.path)] = record
+
+    groups = []
+    for lookup_key, path_map in lookup_groups.items():
+        if len(path_map) < 2:
+            continue
+        records_for_key = sorted(path_map.values(), key=_record_sort_key)
+        groups.append(
+            {
+                "lookup_key": lookup_key,
+                "count": len(records_for_key),
+                "sources": sorted({record.source for record in records_for_key}),
+                "skills": [_compact_record(record) for record in records_for_key],
+            }
+        )
+    return sorted(groups, key=lambda group: group["lookup_key"])
+
+
+def _root_warnings(skills_root: Path, plugin_cache: Path) -> list[dict[str, str]]:
+    if not _roots_overlap(skills_root, plugin_cache):
+        return []
+    return [
+        {
+            "code": "overlapping_roots",
+            "message": "Configured skills_root and plugin_cache overlap; source flags decide which paths are scanned.",
+            "skills_root": str(skills_root),
+            "plugin_cache": str(plugin_cache),
+        }
+    ]
+
+
+def _roots_overlap(left: Path, right: Path) -> bool:
+    try:
+        resolved_left = left.resolve(strict=False)
+        resolved_right = right.resolve(strict=False)
+        if resolved_left == resolved_right:
+            return True
+        resolved_left.relative_to(resolved_right)
+        return True
+    except ValueError:
+        try:
+            resolved_right.relative_to(resolved_left)
+        except ValueError:
+            return False
+        return True
+    except OSError:
+        return False
 
 
 def _record_validation_findings(record: SkillRecord) -> list[dict[str, Any]]:

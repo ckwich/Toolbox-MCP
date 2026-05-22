@@ -315,15 +315,23 @@ def test_roots_status_reports_source_counts_missing_roots_and_duplicates(tmp_pat
         "runtime": True,
         "plugin": True,
     }
+    assert status["source_flags"] == status["enabled_sources"]
     assert status["roots"]["skills_root"]["path"] == str(skills_root)
+    assert status["roots"]["skills_root"]["source"] == "user"
     assert status["roots"]["skills_root"]["exists"] is True
+    assert status["roots"]["skills_root"]["skill_count"] == 2
     assert status["roots"]["runtime_root"]["exists"] is False
+    assert status["roots"]["runtime_root"]["skill_count"] == 0
+    assert status["roots"]["runtime_root"]["errors"][0]["code"] == "missing_root"
     assert status["roots"]["plugin_cache"]["path"] == str(plugin_cache)
     assert status["roots"]["plugin_cache"]["exists"] is False
+    assert status["roots"]["plugin_cache"]["scan_skipped_reason"] is None
     assert status["counts_by_source"] == {"user": 2, "system": 1, "runtime": 0, "plugin": 0}
     assert status["skill_md_counts"]["total"] == 3
     assert status["total_skill_count"] == 3
     assert status["duplicate_name_groups"][0]["name"] == "duplicate"
+    assert status["duplicate_name_groups"][0]["normalized_name"] == "duplicate"
+    assert status["duplicate_name_groups"][0]["count"] == 2
     assert {record["folder"] for record in status["duplicate_name_groups"][0]["records"]} == {
         "alpha-a",
         "alpha-b",
@@ -332,6 +340,27 @@ def test_roots_status_reports_source_counts_missing_roots_and_duplicates(tmp_pat
     assert '"content"' not in serialized
     assert '"body"' not in serialized
     assert '"frontmatter"' not in serialized
+
+
+def test_roots_status_reports_lookup_collisions_and_overlapping_roots(tmp_path: Path) -> None:
+    skills_root = tmp_path / "skills"
+    plugin_cache = skills_root / "plugins"
+    write_skill(skills_root / "alias-folder" / "SKILL.md", name="canonical", description="Folder alias.")
+    write_skill(skills_root / "other" / "SKILL.md", name="alias-folder", description="Name alias.")
+    registry = SkillRegistry(skills_root=skills_root, plugin_cache=plugin_cache)
+
+    status = registry.roots_status()
+
+    assert status["roots"]["plugin_cache"]["enabled"] is False
+    assert status["roots"]["plugin_cache"]["skill_count"] is None
+    assert status["roots"]["plugin_cache"]["scan_skipped_reason"] == "source_excluded"
+    assert status["ambiguous_lookup_groups"][0]["lookup_key"] == "alias-folder"
+    assert status["ambiguous_lookup_groups"][0]["count"] == 2
+    assert {skill["folder"] for skill in status["ambiguous_lookup_groups"][0]["skills"]} == {
+        "alias-folder",
+        "other",
+    }
+    assert status["warnings"][0]["code"] == "overlapping_roots"
 
 
 def test_validate_skills_reports_structured_findings_and_source_filtering(tmp_path: Path) -> None:
