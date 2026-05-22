@@ -96,6 +96,7 @@ async def test_codex_skills_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
         assert guidance["guidance"][0]["title"] == "Skill Loading Guide"
         assert "Start with skills_search" in guidance["guidance"][0]["content"]
         assert "Use skills_load" in guidance["guidance"][0]["content"]
+        assert "skills_roots_status" in guidance["guidance"][0]["content"]
 
         examples = service.list_toolset_examples("codex_skills")
         assert examples["error"] is None
@@ -105,6 +106,8 @@ async def test_codex_skills_catalog_pack_is_agent_ready(tmp_path: Path) -> None:
         example = service.load_toolset_example("codex_skills", "search_then_load_skill")
         assert example["error"] is None
         assert example["example"]["payload"]["steps"][0]["tool"] == "codex_skills.skills_search"
+        assert "include_runtime" in example["example"]["payload"]["steps"][0]["arguments"]
+        assert "include_primary_runtime" not in example["example"]["payload"]["steps"][0]["arguments"]
         assert example["example"]["payload"]["steps"][1]["arguments"]["name"] == {
             "$from": "search.results.0.name"
         }

@@ -42,6 +42,7 @@ async def test_skills_server_exposes_skill_loader_tools(tmp_path: Path) -> None:
             "skills_load",
             "skills_search",
             "skills_validate",
+            "skills_roots_status",
         }.issubset(tool_names)
 
         listing = await client.call_tool("skills_list", {})
@@ -54,6 +55,32 @@ async def test_skills_server_exposes_skill_loader_tools(tmp_path: Path) -> None:
         assert loaded_payload["error"] is None
         assert loaded_payload["skill"]["name"] == "alpha"
         assert "Alpha body." in loaded_payload["content"]
+
+        roots_status = await client.call_tool("skills_roots_status", {})
+        roots_payload = parse_result_payload(roots_status)
+        assert roots_payload["error"] is None
+        assert roots_payload["counts_by_source"]["user"] == 1
+
+
+@pytest.mark.asyncio
+async def test_skills_server_loads_named_sections(tmp_path: Path) -> None:
+    write_skill(
+        tmp_path / "skills" / "alpha" / "SKILL.md",
+        name="alpha",
+        description="User skill for alpha workflows.",
+        body="# Usage\n\nLoad the sharp slice.\n\n# Notes\n\nKeep this separate.",
+    )
+    server = create_server(skills_root=tmp_path / "skills", plugin_cache=tmp_path / "plugins")
+
+    async with create_connected_server_and_client_session(server) as client:
+        loaded = await client.call_tool("skills_load", {"name": "alpha", "section": "usage"})
+        loaded_payload = parse_result_payload(loaded)
+
+        assert loaded_payload["error"] is None
+        assert loaded_payload["selected_section"]["id"] == "usage"
+        assert loaded_payload["content"].startswith("# Usage")
+        assert "Load the sharp slice." in loaded_payload["content"]
+        assert "Keep this separate." not in loaded_payload["content"]
 
 
 @pytest.mark.asyncio

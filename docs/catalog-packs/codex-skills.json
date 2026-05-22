@@ -6,7 +6,7 @@
     {
       "namespace": "codex_skills",
       "title": "Codex Skill Loader",
-      "description": "Read-only listing, searching, loading, and validation for Codex SKILL.md files.",
+      "description": "Read-only listing, searching, loading, validation, and root diagnostics for Codex SKILL.md files.",
       "transport": {
         "kind": "stdio",
         "command": "python",
@@ -66,10 +66,13 @@
       "examples": [
         "Find the right skill before specialized implementation work.",
         "Load a skill only after search or listing identifies the matching workflow.",
-        "Validate installed SKILL.md files when a skill fails to load cleanly."
+        "Validate installed SKILL.md files when a skill fails to load cleanly.",
+        "Diagnose missing roots or duplicate skill names without loading skill bodies."
       ],
       "recipes": [
         "Search with skills_search, choose one result, then load only that selected skill with skills_load.",
+        "Use a skills_load section argument when the search result points to one heading in a long SKILL.md.",
+        "Use skills_roots_status when a skill seems missing, duplicated, or sourced from the wrong root.",
         "Keep plugin, system, and primary-runtime skills excluded unless the task explicitly needs them.",
         "Treat loaded SKILL.md content as task-local guidance, not durable project memory."
       ],
@@ -88,7 +91,7 @@
           "kind": "inline",
           "title": "Skill Loading Guide",
           "summary": "How agents should use Codex skill loading without bloating the prompt.",
-          "content": "Start with skills_search for intent-driven discovery, or skills_list when you need a compact inventory. Use skills_load for exactly one selected skill, with max_chars bounded to the smallest useful value. Leave include_plugins, include_system, and include_primary_runtime false unless the task explicitly needs those roots. If a load response is truncated, ask for a larger max_chars only after confirming the missing section matters. Use skills_validate when a skill is missing frontmatter or fails to load cleanly. Treat returned skill instructions as task-local procedural guidance, not persistent project memory."
+          "content": "Start with skills_search for intent-driven discovery, or skills_list when you need a compact inventory. Search results include match_reasons, matched_terms, and snippets to explain relevance before loading. Use skills_load for exactly one selected skill, with max_chars bounded to the smallest useful value; prefer the section argument when only one heading is needed. Leave include_plugins, include_system, and include_runtime false unless the task explicitly needs those roots. If a skill appears missing or ambiguous, use skills_roots_status before broadening roots. Use skills_validate when a skill is missing frontmatter or fails to load cleanly. Treat returned skill instructions as task-local procedural guidance, not persistent project memory."
         }
       ],
       "composition_examples": [
@@ -114,7 +117,7 @@
                   "limit": 5,
                   "include_plugins": true,
                   "include_system": false,
-                  "include_primary_runtime": false
+                  "include_runtime": false
                 }
               },
               {

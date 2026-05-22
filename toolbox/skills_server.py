@@ -18,8 +18,8 @@ def create_server(
     server = FastMCP(
         name="Codex Skill Loader",
         instructions=(
-            "Read-only MCP server for listing, loading, searching, and validating Codex SKILL.md files "
-            "from the configured Codex skills roots."
+            "Read-only MCP server for listing, loading, searching, validating, and diagnosing "
+            "Codex SKILL.md files from the configured Codex skills roots."
         ),
     )
 
@@ -45,6 +45,7 @@ def create_server(
         include_runtime: bool = True,
         include_plugins: bool = False,
         max_chars: int = 20_000,
+        section: str | None = None,
     ) -> dict[str, object]:
         return registry.load_skill(
             name,
@@ -53,6 +54,7 @@ def create_server(
             include_runtime=include_runtime,
             include_plugins=include_plugins,
             max_chars=max_chars,
+            section=section,
         )
 
     @server.tool(description="Search installed Codex skills by name, description, and SKILL.md body text.")
@@ -82,6 +84,18 @@ def create_server(
         return registry.validate_skills(
             name=name,
             source=source,
+            include_system=include_system,
+            include_runtime=include_runtime,
+            include_plugins=include_plugins,
+        )
+
+    @server.tool(description="Report configured skill roots, source counts, and duplicate skill names.")
+    def skills_roots_status(
+        include_system: bool = False,
+        include_runtime: bool = False,
+        include_plugins: bool = False,
+    ) -> dict[str, object]:
+        return registry.roots_status(
             include_system=include_system,
             include_runtime=include_runtime,
             include_plugins=include_plugins,

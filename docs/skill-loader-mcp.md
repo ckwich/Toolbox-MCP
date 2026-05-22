@@ -4,12 +4,13 @@ Toolbox includes a small read-only MCP server for Codex skills. It is intentiona
 separate from the Toolbox control plane so it can be loaded directly by Codex or mounted
 through Toolbox as a managed stdio toolset.
 
-The server reads `SKILL.md` files from configured roots and exposes four tools:
+The server reads `SKILL.md` files from configured roots and exposes five tools:
 
 - `skills_list`: list skill metadata without loading full bodies
-- `skills_load`: load one `SKILL.md` by frontmatter name or folder name
-- `skills_search`: search names, descriptions, and skill bodies
-- `skills_validate`: report missing required frontmatter fields
+- `skills_load`: load one `SKILL.md` by frontmatter name or folder name, optionally narrowed to a markdown section
+- `skills_search`: search names, descriptions, and skill bodies with deterministic match reasons
+- `skills_validate`: report frontmatter, parsing, and duplicate-name findings
+- `skills_roots_status`: report configured root health, source counts, and duplicate names
 
 It does not execute skill scripts, follow arbitrary paths, or write skill files.
 
@@ -22,6 +23,26 @@ The default roots are:
 
 User skills are included by default. System, primary-runtime, and plugin skills are
 available only when the caller sets the matching include flag.
+
+Use `skills_roots_status` when diagnosing missing skills, duplicate names, or broken
+root configuration. Its response is metadata-only; it reports paths, existence flags,
+source counts, and compact duplicate groups without returning skill bodies.
+
+## Loading Strategy
+
+Start with `skills_search` for intent-driven discovery, or `skills_list` when a compact
+inventory is enough. Search results include `match_reasons`, `matched_terms`, and a
+short `snippet` so agents can explain why a skill matched before loading it.
+
+Use `skills_load` for one selected skill. Default loads remain backward-compatible and
+return full `SKILL.md` content up to `max_chars`, plus a compact `sections` index. When
+only one part of a long skill matters, pass `section` with a heading id or title to load
+that ATX heading subtree instead of the full file.
+
+Use `skills_validate` when a skill fails to load cleanly or when authoring/editing skills.
+Validation keeps the legacy `valid` and `errors` fields, and adds structured `findings`
+with severities for malformed frontmatter, missing required fields, long descriptions,
+and duplicate names.
 
 ## Direct Codex Registration
 
@@ -117,8 +138,8 @@ Then activate it:
 ```
 
 Mounted tool names will be `codex_skills.skills_list`,
-`codex_skills.skills_load`, `codex_skills.skills_search`, and
-`codex_skills.skills_validate`.
+`codex_skills.skills_load`, `codex_skills.skills_search`,
+`codex_skills.skills_validate`, and `codex_skills.skills_roots_status`.
 
 ## Local Smoke
 
